@@ -11,5 +11,20 @@ config_version=5
 [application]
 
 config/name="Spiel"
+config/description="Definitely will be added later (0_o)"
+config/version="0.0.0.0"
+run/main_scene="res://interface/main/main_scene.tscn"
+config/use_custom_user_dir=true
 config/features=PackedStringArray("4.2", "Forward Plus")
+run/low_processor_mode=true
 config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[filesystem]
+
+import/blender/enabled=false
+import/fbx/enabled=false

@@ -1,0 +1,45 @@
+[gd_scene format=3 uid="uid://cid4nwwwdmjnx"]
+
+[node name="Multiplayer" type="Node2D"]
+
+[node name="Username" type="LineEdit" parent="."]
+offset_left = 266.0
+offset_top = 150.0
+offset_right = 333.063
+offset_bottom = 181.0
+text = "USRNM (WIP)"
+
+[node name="IP" type="LineEdit" parent="."]
+offset_left = 266.0
+offset_top = 185.0
+offset_right = 333.063
+offset_bottom = 216.0
+text = "IP (WIP)"
+
+[node name="Host" type="Button" parent="."]
+offset_left = 600.0
+offset_top = 310.0
+offset_right = 689.0
+offset_bottom = 341.0
+text = "Host (WIP)"
+
+[node name="Join" type="Button" parent="."]
+offset_left = 599.0
+offset_top = 344.0
+offset_right = 688.0
+offset_bottom = 375.0
+text = "Join (WIP)"
+
+[node name="Return" type="Button" parent="."]
+offset_left = 595.0
+offset_top = 382.0
+offset_right = 701.0
+offset_bottom = 413.0
+text = "Return (WIP)"
+
+[node name="LAN" type="CheckBox" parent="."]
+offset_left = 801.0
+offset_top = 180.0
+offset_right = 905.0
+offset_bottom = 211.0
+text = "LAN (WiP)"
