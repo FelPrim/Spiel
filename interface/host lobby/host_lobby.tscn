@@ -1,3 +1,104 @@
 [gd_scene format=3 uid="uid://dnp1rn6g2yyi5"]
 
 [node name="HostLobby" type="Node2D"]
+
+[node name="LAN" type="CheckBox" parent="."]
+offset_left = 1000.0
+offset_top = 67.0
+offset_right = 1104.0
+offset_bottom = 98.0
+text = "LAN (WiP)"
+
+[node name="LineEdits (WiP)" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="LobbyName" type="LineEdit" parent="LineEdits (WiP)"]
+offset_left = 113.0
+offset_top = 56.0
+offset_right = 180.063
+offset_bottom = 87.0
+text = "LbyNM (WiP)"
+
+[node name="Parol" type="LineEdit" parent="LineEdits (WiP)"]
+offset_left = 200.0
+offset_top = 56.0
+offset_right = 267.063
+offset_bottom = 87.0
+text = "Parol (WiP)"
+
+[node name="IP" type="LineEdit" parent="LineEdits (WiP)"]
+offset_left = 113.0
+offset_top = 97.0
+offset_right = 180.063
+offset_bottom = 128.0
+text = "localhost (WiP)"
+
+[node name="Labels (WiP)" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Map or save" type="Label" parent="Labels (WiP)"]
+offset_left = 245.0
+offset_top = 184.0
+offset_right = 285.0
+offset_bottom = 207.0
+text = "Map/save:"
+
+[node name="Mods" type="Label" parent="Labels (WiP)"]
+offset_left = 246.0
+offset_top = 212.0
+offset_right = 289.0
+offset_bottom = 235.0
+text = "Mods:"
+
+[node name="Mechanics" type="Label" parent="Labels (WiP)"]
+offset_left = 247.0
+offset_top = 238.0
+offset_right = 290.0
+offset_bottom = 261.0
+text = "Mechanics:"
+
+[node name="Gamerules" type="Label" parent="Labels (WiP)"]
+offset_left = 248.0
+offset_top = 265.0
+offset_right = 335.0
+offset_bottom = 288.0
+text = "Gamerules:
+"
+
+[node name="MenuBars? (WiP)" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 342.0
+offset_top = 190.0
+offset_right = 382.0
+offset_bottom = 230.0
+
+[node name="Map or save" type="MenuBar" parent="MenuBars? (WiP)"]
+offset_left = 11.0
+offset_top = -2.0
+offset_right = 114.0
+offset_bottom = 16.0
+
+[node name="Mods" type="MenuBar" parent="MenuBars? (WiP)"]
+offset_left = 11.0
+offset_top = 25.0
+offset_right = 114.0
+offset_bottom = 43.0
+
+[node name="Mechanics" type="MenuBar" parent="MenuBars? (WiP)"]
+offset_left = 13.0
+offset_top = 51.0
+offset_right = 116.0
+offset_bottom = 69.0
+
+[node name="Gamerules" type="MenuBar" parent="MenuBars? (WiP)"]
+offset_left = 14.0
+offset_top = 79.0
+offset_right = 117.0
+offset_bottom = 97.0
