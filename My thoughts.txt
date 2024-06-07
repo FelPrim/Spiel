@@ -1,0 +1,12 @@
+
+Save:
+1. Accessible
+2. Paroled (host-owner of parol)
+3. Encrypted (SpielFactory-owner of parol. Needs internet connection to open save)
+Logs:
+1. Normal: Observer owns 1 not-encrypted global log
+2. Trusting host - Host owns 1 not-encrypted global log for everything
+
+Mods ideas:
+1. Change standart flags to user's
+2. Add newspress (like vic 2)
