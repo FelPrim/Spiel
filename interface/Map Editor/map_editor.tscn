@@ -1,0 +1,82 @@
+[gd_scene format=3 uid="uid://cv1kxwhe3nhhc"]
+
+[node name="MapEditor" type="Node2D"]
+
+[node name="Return" type="Button" parent="."]
+offset_left = 82.0
+offset_top = 608.0
+offset_right = 187.0
+offset_bottom = 639.0
+text = "Return (WiP)"
+
+[node name="Load" type="Button" parent="."]
+offset_left = 89.0
+offset_top = 59.0
+offset_right = 442.0
+offset_bottom = 136.0
+text = "Load map (WiP)
+
+Maybe will be changed for menubar \"Action\""
+
+[node name="Save" type="Button" parent="."]
+offset_left = 85.0
+offset_top = 570.0
+offset_right = 190.0
+offset_bottom = 601.0
+text = "Save (WiP)"
+
+[node name="MapInfo (WiP)" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 481.0
+offset_top = 67.0
+offset_right = 521.0
+offset_bottom = 107.0
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MapInfo (WiP)"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Required" type="VBoxContainer" parent="MapInfo (WiP)/HBoxContainer"]
+layout_mode = 2
+
+[node name="Button" type="Button" parent="MapInfo (WiP)/HBoxContainer/Required"]
+layout_mode = 2
+text = "Required"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MapInfo (WiP)/HBoxContainer/Required"]
+layout_mode = 2
+
+[node name="Mods" type="VBoxContainer" parent="MapInfo (WiP)/HBoxContainer/Required/HBoxContainer"]
+layout_mode = 2
+
+[node name="Button" type="Button" parent="MapInfo (WiP)/HBoxContainer/Required/HBoxContainer/Mods"]
+layout_mode = 2
+text = "Mods"
+
+[node name="Mechanics" type="VBoxContainer" parent="MapInfo (WiP)/HBoxContainer/Required/HBoxContainer"]
+layout_mode = 2
+
+[node name="Button" type="Button" parent="MapInfo (WiP)/HBoxContainer/Required/HBoxContainer/Mechanics"]
+layout_mode = 2
+text = "Mechanics"
+
+[node name="Connections" type="VBoxContainer" parent="MapInfo (WiP)/HBoxContainer"]
+layout_mode = 2
+
+[node name="Button" type="Button" parent="MapInfo (WiP)/HBoxContainer/Connections"]
+layout_mode = 2
+text = "Table of
+connections"
+
+[node name="Will be deleted" type="Label" parent="."]
+offset_left = 812.0
+offset_top = 66.0
+offset_right = 1112.0
+offset_bottom = 115.0
+text = "Make UI so that user can choose between
+\"Buttonish\" table of map info and
+not interactive one 
+(if list of mods,mechanics and connections
+ isn't huge, second should be standard)"
