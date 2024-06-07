@@ -17,7 +17,8 @@ run/main_scene="res://interface/main/main_scene.tscn"
 config/use_custom_user_dir=true
 config/features=PackedStringArray("4.2", "Forward Plus")
 run/low_processor_mode=true
-config/icon="res://icon.svg"
+boot_splash/image="res://pictures/base/Loading_screen.png"
+config/icon="res://pictures/base/Icon.png"
 
 [display]
 
