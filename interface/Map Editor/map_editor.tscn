@@ -1,6 +1,9 @@
-[gd_scene format=3 uid="uid://cv1kxwhe3nhhc"]
+[gd_scene load_steps=2 format=3 uid="uid://cv1kxwhe3nhhc"]
+
+[ext_resource type="Script" path="res://interface/Map Editor/map_editor.gd" id="1_c7uac"]
 
 [node name="MapEditor" type="Node2D"]
+script = ExtResource("1_c7uac")
 
 [node name="Return" type="Button" parent="."]
 offset_left = 82.0
@@ -80,3 +83,5 @@ text = "Make UI so that user can choose between
 not interactive one 
 (if list of mods,mechanics and connections
  isn't huge, second should be standard)"
+
+[node name="The Map" type="Node" parent="."]
