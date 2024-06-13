@@ -24,11 +24,9 @@ var current_coords: Vector2
 var time: int
 
 func _ready():
-	OS.low_processor_usage_mode = false
-	print(OS.low_processor_usage_mode)
+	#OS.low_processor_usage_mode = false
 	sprite_2d.z_index = -1
 	sprite_2d.centered = false
-	print("Map editor is  ready")
 	sprite_2d.texture = ImageTexture.create_from_image(map.picture)
 
 func _process(delta: float):
