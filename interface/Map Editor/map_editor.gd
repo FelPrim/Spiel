@@ -13,8 +13,9 @@ extends Node2D
 #endregion
 
 
-@onready var map: MapInfo = MapInfo.new()
-@onready var sprite_2d: Sprite2D = $Sprite2D
+@onready var mapinfo: MapInfo = MapInfo.new()
+@onready var map = $Map
+@onready var sprite_2d = $Map/Sprite2D
 @onready var camera_2d: Camera2D = $Camera2D
 
 var dragging = false
@@ -25,9 +26,7 @@ var time: int
 
 func _ready():
 	#OS.low_processor_usage_mode = false
-	sprite_2d.z_index = -1
-	sprite_2d.centered = false
-	sprite_2d.texture = ImageTexture.create_from_image(map.picture)
+	sprite_2d.texture = ImageTexture.create_from_image(mapinfo.picture)
 
 func _process(delta: float):
 	time += 1
