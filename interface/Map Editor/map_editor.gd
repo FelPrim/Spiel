@@ -17,8 +17,12 @@ extends Node2D
 @onready var map = $Map
 @onready var sprite_2d = $Map/Sprite2D
 @onready var camera_2d: Camera2D = $Camera2D
+@onready var add = $UI/Add
+@onready var connect = $UI/Connect
 
-var dragging = false
+var adding: bool = false
+var connecting: bool = false
+var dragging: bool = false
 var cur_zoom: float = 1
 var previous_coords: Vector2
 var current_coords: Vector2
@@ -27,6 +31,8 @@ var time: int
 func _ready():
 	#OS.low_processor_usage_mode = false
 	sprite_2d.texture = ImageTexture.create_from_image(mapinfo.picture)
+	add.toggle_mode = true
+	connect.toggle_mode = true
 
 func _process(delta: float):
 	time += 1
@@ -48,10 +54,16 @@ func _unhandled_input(event):
 	if event.is_action_pressed("zoom_out"):
 		camera_zoom(0.9)
 	if event.is_action_pressed("hold"):
-		previous_coords = get_global_mouse_position()
-		dragging = true
+		if adding:
+			pass
+		elif connecting:
+			pass
+		else:
+			previous_coords = get_global_mouse_position()
+			dragging = true
 	if event.is_action_released("hold"):
 		dragging = false
+	
 	
 	
 
@@ -59,3 +71,19 @@ func camera_zoom(delta: float):
 	cur_zoom *= delta
 	camera_2d.zoom = Vector2(cur_zoom, cur_zoom)
 	
+
+
+func _on_add_pressed():
+	adding = !adding
+	if adding and connecting:
+		connecting = false
+		connect.button_pressed = !connect.button_pressed
+	#add.action_mode = !add.action_mode
+
+
+func _on_connect_pressed():
+	connecting = !connecting
+	if adding and connecting:
+		adding = false
+		add.button_pressed = !add.button_pressed
+	#connect.action_mode = !connect.action_mode
