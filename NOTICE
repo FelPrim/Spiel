@@ -1,0 +1,7 @@
+This product includes software developed by the uNetworking project (https://github.com/uNetworking).
+
+This product includes uWebSockets (https://github.com/uNetworking/uWebSockets) and uSockets (https://github.com/uNetworking/uSockets), which are licensed under the Apache License, Version 2.0.
+
+For details, see the included LICENSE file and visit:
+- https://github.com/uNetworking/uWebSockets
+- https://github.com/uNetworking/uSockets
