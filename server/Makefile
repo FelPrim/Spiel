@@ -18,10 +18,16 @@ LDFLAGS = \
 SRC = src/main.cpp
 OUT = build/server.exe
 
-all:
+.PHONY: $(OUT) clean
+
+$(OUT): $(SRC) ../deps/uSockets/uSockets.a | build
+	$(CXX) $(SRC) $(CXXFLAGS) $(LDFLAGS) -o $@
+	
+build:
 	mkdir -p build
-	$(CXX) $(SRC) $(CXXFLAGS) $(LDFLAGS) -o $(OUT)
+	
+../deps/uSockets/uSockets.a:
+	WITH_OPENSSL=1 $(MAKE) -C ../deps/uSockets
 
 clean:
 	rm -rf build
-
