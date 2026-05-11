@@ -5,3 +5,6 @@ This product includes uWebSockets (https://github.com/uNetworking/uWebSockets) a
 For details, see the included LICENSE file (MIT for this project), the Apache 2.0 license at https://www.apache.org/licenses/LICENSE-2.0 (for uWebSockets/uSockets) and visit:
 - https://github.com/uNetworking/uWebSockets
 - https://github.com/uNetworking/uSockets
+
+Notable mentions:
+- https://github.com/filosottile/mkcert
