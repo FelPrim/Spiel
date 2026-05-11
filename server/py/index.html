@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <div id="status">Статус: отключено</div>
+    <input id="msg" placeholder="Введите сообщение">
+    <button onclick="send()">Отправить</button>
+    <pre id="log"></pre>
+
+    <script>
+        const status = document.getElementById('status');
+        const log = document.getElementById('log');
+        const ws = new WebSocket('wss://localhost:9001');
+
+        ws.onopen = () => {
+            status.textContent = 'Статус: ✅ подключено';
+            log.textContent += '🟢 Соединение установлено\n';
+        };
+
+        ws.onmessage = (e) => {
+            log.textContent += `📥 Сервер: ${e.data}\n`;
+        };
+
+        ws.onclose = () => {
+            status.textContent = 'Статус: 🔌 отключено';
+            log.textContent += '🔴 Соединение закрыто\n';
+        };
+
+        ws.onerror = (e) => {
+            log.textContent += `❌ Ошибка: ${JSON.stringify(e)}\n`;
+        };
+
+        function send() {
+            const input = document.getElementById('msg');
+            const text = input.value;
+            if (text && ws.readyState === WebSocket.OPEN) {
+                ws.send(text);
+                log.textContent += `📤 Вы: ${text}\n`;
+                input.value = '';
+            }
+        }
+    </script>
+</body>
+</html>
