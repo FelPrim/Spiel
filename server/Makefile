@@ -1,9 +1,16 @@
 CXX = g++
 
-CXXFLAGS = -std=c++23 -O3 \
-    -I../deps/uWebSockets/src \
-    -I../deps/uSockets/src \
-    -DLIBUS_USE_OPENSSL
+CXXFLAGS = -std=c++23 \
+	-I../deps/uWebSockets/src \
+	-I../deps/uSockets/src \
+	-DLIBUS_USE_OPENSSL \
+	-Wall -Wextra
+
+ifeq ($(OS),Windows_NT)
+PDLDFLAGS := -lws2_32 -lcrypt32 -lbcrypt
+else
+PDLDFLAGS := -static-libstdc++
+endif
 
 LDFLAGS = \
     ../deps/uSockets/uSockets.a \
@@ -11,9 +18,7 @@ LDFLAGS = \
     -lssl \
     -lcrypto \
     -lz \
-    -lws2_32 \
-    -lcrypt32 \
-    -lbcrypt
+    $(PDLDFLAGS)
 
 SRC = src/main.cpp
 OUT = build/server.exe

@@ -5,13 +5,42 @@
 #define WITH_OPENSSL 1
 #include "App.h"
 #include <cstdio>
+#include <cstdlib>
 
 /* This is a simple WebSocket echo server example.
  * You may compile it with "WITH_OPENSSL=1 make" or with "make" */
 
+struct Pstr{
+	char* buffer;
+	int size;
+};
+// .. - server
+// ../.. - Spiel
+void load_file(const char *cstr, Pstr str) {
+    FILE* file = fopen(cstr, "rb");
+    if (!file) { 
+		perror("fopen"); 
+		abort(); 
+	}
+    fseek(file, 0, SEEK_END);
+    long file_sz = ftell(file);
+    if (file_sz == -1) { 
+		fclose(file); 
+		abort();
+	}
+    fseek(file, 0, SEEK_SET);
+    if (str.size <= file_sz) {
+        printf("buffersize: %d\nfilesize: %ld\n", str.size, file_sz);
+        puts("Make buffersize larger!");
+        fclose(file);
+        abort();
+    }
+    size_t bytes_read = fread(str.buffer, 1, file_sz, file);
+    str.buffer[bytes_read] = '\0';
+    fclose(file);
+}
 
 int main() {
-
 	constexpr bool USING_SSL = true;
 	constexpr bool IS_SERVER = true;
 	constexpr bool IS_LOCALHOST = true;
@@ -22,6 +51,21 @@ int main() {
         /* Fill with user data */
     };
 	using WS = uWS::WebSocket<USING_SSL, IS_SERVER, PerSocketData>;
+	
+	constexpr int index_html_sz = 2048;
+	char index_html_first_arg[index_html_sz];
+	Pstr index_html = {
+		index_html_first_arg,
+		index_html_sz
+	};
+	load_file("../../client/index.html", index_html);
+	constexpr int main_js_sz = 1024;
+	char main_js_first_arg[main_js_sz];
+	Pstr main_js = {
+		main_js_first_arg,
+		main_js_sz
+	};
+	load_file("../../client/main.js", main_js);
 
     /* Keep in mind that uWS::SSLApp({options}) is the same as uWS::App() when compiled without SSL support.
      * You may swap to using uWS:App() if you don't need SSL */
@@ -89,24 +133,18 @@ int main() {
 			puts(".close called");
         }
     })
-	.get("/*", [](auto* res, auto* req) {
+	.get("/*", [&index_html, &main_js](auto* res, auto* req) {
         std::string_view url = req->getUrl();
         
         if (url == "/" || url == "/index.html") {
-			// should be fixed later
-			FILE* index_html = fopen("../py/index.html", "r");
-            char buffer[2048] = {0};
-			fseek(index_html, 0, SEEK_END);
-			int file_sz = ftell(index_html);
-			fseek(index_html, 0, SEEK_SET);
-			
-			int bytes_read = fread(buffer, 1, file_sz, index_html);
-			buffer[bytes_read] = '\0';
-            
             res->writeHeader("Content-Type", "text/html; charset=utf-8");
-            res->end(buffer);
-			fclose(index_html);
+			// res->writeHeader("Cache-Control", "public, max-age=3600");
+			res->end(index_html.buffer);
         }
+		else if (url == "/main.js"){
+			res->writeHeader("Content-Type", "application/javascript; charset=utf-8");
+			res->end(main_js.buffer);
+		}
         else if (url == "/health") {
             res->writeHeader("Content-Type", "application/json");
             res->end(R"({"status":"ok","port":9001})");
