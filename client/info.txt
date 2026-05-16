@@ -1,0 +1,35 @@
+I am not familiar with web tech, so, maybe, here will be my thoughts on it.
+We have following:
+html       - static part of the site, "skeleton"
+css        - makes site visually appealing
+javascript - makes site interactive. Also provides access to canvas graphics, which is as immediate as it can be in browser (instead of html's retained mode) when talking about CPU
+wasm       - can be called from js, uses memory more efficiently (and, so, is more performant in heavy computaional tasks). But it isn't a native code - should always consider using browser's capabilities directly instead. Can be multi-threaded but it will make everything complicated - so it is better if it isn't.
+webgpu     - GPU's interface which can be accessed from js.
+webgl      - old webgpu.
+WebWorkers - enables parallelizing globally in js (which by itself is asynchronous, but single-threaded)
+
+In Networking we have:
+TCP vs UDP sockets: slow, but guaranteed if used correctly vs fast, but without guaranties
+TCP -> TLS (if is using "SSL" (is isn't SSL nowadays, but noone cares))
+TCP -> HTTP (if is talking about browsers)
+HTTP -> HTTPS (if is using SSL)
+Also there is cool QUIC, which is UDP but guaranteed. I don't understand how it works.
+
+When we are talking about browsers, we should also add:
+HTTP(/S) has commands:
+    GET    - get data(file?) from server
+    POST   - send data to server
+    PUT    - send data to server and say to replace specific old data with the new one
+    DELETE - say to delete specific data
+    PATCH  - send data to server and say to replace specific parts of old data, to update old data (or... to patch)
+
+These commands are messages from client to server. To send message from server to client we can of course use reply of GET message, but it is stupid when it is forced so we also have:
+Server-Sent Events (EventSource) (can only listen from server)  and WebSockets (I understand this as analogue of TCP-connection)
+
+All previous stuff uses TCP underneath but if we wanted to use UDP in browser we need to use:
+Either WebTransport (Analogue of WebSocket but uses QUIC and is really new tech) or WebRTC.
+WebRTC was created for P2P mediasharing but can be used in client-server model. 
+So, I need to mention P2P and client-server models:
+P2P - 2 "clients" are identical and talking to one another. But, realistically, they can't establish connection without some third entity. In some cases this "third entity" can be a mesh of other clients, but it is really complicated and I don't understand it. In most cases this third entity is just a server. So, we have clients talking to one another and also connections between clients and this dedicated server that are managing the first connection. In case of WebRTC connection between peers is called "data channel" and all stuff for which server is responsible is called "signaling". 
+Client-server - Client is talking only to server and can get information only from server. So, if client wants to send a message to another client, client needs to send to server {content_of_the_message, id_of_recipient} and possibly also information that "this message has type 'message to another client'". 
+Client-server model is easier to implement (because, realistically, if you are wanting P2P to work your signalling will be client-server model, so you always need to implement one) but causes extra latency when client sends message to another client. This is it's biggest flaw, AFAIK.
