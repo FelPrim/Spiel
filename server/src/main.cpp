@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+constexpr bool DEBUGGING = true;
 /* This is a simple WebSocket echo server example.
  * You may compile it with "WITH_OPENSSL=1 make" or with "make" */
 
@@ -16,7 +17,7 @@ struct Pstr{
 };
 // .. - server
 // ../.. - Spiel
-void load_file(const char *cstr, Pstr str) {
+void load_file(const char *cstr, Pstr str, bool binary=false) {
     FILE* file = fopen(cstr, "rb");
     if (!file) { 
 		perror("fopen"); 
@@ -36,7 +37,8 @@ void load_file(const char *cstr, Pstr str) {
         abort();
     }
     size_t bytes_read = fread(str.buffer, 1, file_sz, file);
-    str.buffer[bytes_read] = '\0';
+	if (not binary)
+		str.buffer[bytes_read] = '\0';
     fclose(file);
 }
 
@@ -44,7 +46,7 @@ int main() {
 	constexpr bool USING_SSL = true;
 	constexpr bool IS_SERVER = true;
 	constexpr bool IS_LOCALHOST = true;
-	constexpr int PORT = 9001;
+	constexpr int PORT = 9002;
 	
     /* ws->getUserData returns one of these */
     struct PerSocketData {
@@ -66,7 +68,13 @@ int main() {
 		main_js_sz
 	};
 	load_file("../../client/main.js", main_js);
-
+	constexpr int favicon_sz = 8192+4096;
+	char favicon_first_arg[favicon_sz];
+	Pstr favicon = {
+		favicon_first_arg,
+		favicon_sz
+	};
+	load_file("../../client/favicon.png", favicon, true);
     /* Keep in mind that uWS::SSLApp({options}) is the same as uWS::App() when compiled without SSL support.
      * You may swap to using uWS:App() if you don't need SSL */
 	static_assert(USING_SSL && WITH_OPENSSL==1, "change SSLApp to App");
@@ -106,7 +114,8 @@ int main() {
             //ws->send(message, opCode, false);
 			
 			// TODO
-			std::puts(".message called");
+			puts(".message called");
+			printf("%.*s", (int)message.size(), message.data());
         },
 		// if client reads msgs slowly and server sends them fast there will be a buffer of messages
 		// if this buffer is overflown, messages will need to be dropped!
@@ -131,14 +140,16 @@ int main() {
 			
 			// TODO
 			puts(".close called");
+			printf("%.*s", (int)message.size(), message.data());
         }
     })
-	.get("/*", [&index_html, &main_js](auto* res, auto* req) {
+	.get("/*", [&index_html, &main_js, &favicon](auto* res, auto* req) {
         std::string_view url = req->getUrl();
+		if (DEBUGGING)
+			printf("[DEBUG] Request URL: '%.*s'\n", (int)url.size(), url.data());
         
         if (url == "/" || url == "/index.html") {
             res->writeHeader("Content-Type", "text/html; charset=utf-8");
-			// res->writeHeader("Cache-Control", "public, max-age=3600");
 			res->end(index_html.buffer);
         }
 		else if (url == "/main.js"){
@@ -149,6 +160,13 @@ int main() {
             res->writeHeader("Content-Type", "application/json");
             res->end(R"({"status":"ok","port":9001})");
         }
+		else if (url == "/favicon.png" ||
+				 url == "/favicon.ico"){
+			res->writeHeader("Content-Type", "image/png");
+			res->end(
+				std::string_view(favicon.buffer,
+								favicon.size));
+		}
         else {
             res->writeStatus("404 Not Found");
             res->end("Not found");
