@@ -118,6 +118,7 @@ void setup_routes(
 			puts(".message called");
 			if(opCode==uWS::TEXT)
 				printf("%.*s", (int)message.size(), message.data());
+			ws->send("Hello, Client!", uWS::TEXT, false);
         },
 		// if client reads msgs slowly and server sends them fast there will be a buffer of messages
 		// if this buffer is overflown, messages will need to be dropped!
