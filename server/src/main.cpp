@@ -42,25 +42,37 @@ struct Pstr{
 void load_file(const char *cstr, Pstr str, bool binary=false) {
     FILE* file = fopen(cstr, "rb");
     if (!file) { 
+		// file should exist
 		perror("fopen"); 
 		abort(); 
 	}
     fseek(file, 0, SEEK_END);
     long file_sz = ftell(file);
     if (file_sz == -1) { 
+		// should be able to read file
+		perror("file_sz == -1"); 
 		fclose(file); 
 		abort();
 	}
     fseek(file, 0, SEEK_SET);
-    if (str.size <= file_sz) {
-        printf("buffersize: %d\nfilesize: %ld\n", str.size, file_sz);
-        puts("Make buffersize larger!");
-        fclose(file);
-        abort();
-    }
+    size_t required_size = file_sz + (binary ? 0 : 1);
+	if (str.size < required_size) {
+		// should be able to store file in buffer
+		printf("buffersize: %d\nfilesize: %ld\n", str.size, file_sz);
+		puts("Make buffersize larger!");
+		fclose(file);
+		abort();
+	}
     size_t bytes_read = fread(str.buffer, 1, file_sz, file);
+	if(bytes_read != file_sz){
+		// error when reading file
+		perror("bytes_read != file_sz"); 
+		fclose(file);
+		abort();
+	}
 	if (not binary)
 		str.buffer[bytes_read] = '\0';
+	str.size = bytes_read;
     fclose(file);
 }
 
@@ -104,7 +116,8 @@ void setup_routes(
 			
 			// TODO
 			puts(".message called");
-			printf("%.*s", (int)message.size(), message.data());
+			if(opCode==uWS::TEXT)
+				printf("%.*s", (int)message.size(), message.data());
         },
 		// if client reads msgs slowly and server sends them fast there will be a buffer of messages
 		// if this buffer is overflown, messages will need to be dropped!
@@ -137,7 +150,7 @@ void setup_routes(
 		if (DEBUGGING)
 			printf("[DEBUG] Request URL: '%.*s'\n", (int)url.size(), url.data());
         
-        if (url == "/" || url == "/index.html") {
+        if (url == "/") {
             res->writeHeader("Content-Type", "text/html; charset=utf-8");
 			res->end(index_html.buffer);
         }
@@ -148,12 +161,11 @@ void setup_routes(
         else if (url == "/health") {
             res->writeHeader("Content-Type", "application/json");
 			if constexpr (std::is_same_v<AppType, uWS::SSLApp>)
-				res->end(R"({"status":"ok", "port":})" HTTPSPORT_STR "}");
+				res->end(R"({"status":"ok", "port":)" HTTPSPORT_STR "}");
 			else 
-				res->end(R"({"status":"ok", "port":})" HTTPPORT_STR "}");
+				res->end(R"({"status":"ok", "port":)" HTTPPORT_STR "}");
         }
-		else if (url == "/favicon.png" ||
-				 url == "/favicon.ico"){
+		else if (url == "/ico.png"){
 			res->writeHeader("Content-Type", "image/png");
 			res->end(
 				std::string_view(favicon.buffer,
@@ -210,6 +222,7 @@ int main() {
 				"../misc/cert.pem",
 			.passphrase = (IS_LOCALHOST)?
 				"":
+				// TODO
 				"1234"
 		});
 
