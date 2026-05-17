@@ -6,8 +6,30 @@
 #include "App.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cstdarg>
+
+//#include <initializer_list>
+#include <type_traits>
 
 constexpr bool DEBUGGING = true;
+constexpr bool USING_SSL = true;
+constexpr bool IS_SERVER = true;
+#define IS_LOCALHOST true
+// I think that I will use setcap
+#if IS_LOCALHOST
+	constexpr int HTTPPORT  = 23233;
+	constexpr int HTTPSPORT = 23234;
+	// std::format is taking too long
+	#define HTTPPORT_STR  "23233"
+	#define HTTPSPORT_STR "23234"
+#else
+	constexpr int HTTPPORT  = 80;
+	constexpr int HTTPSPORT = 443;
+	// std::format is taking too long
+	#define HTTPPORT_STR  "80"
+	#define HTTPSPORT_STR "443"
+#endif
+
 /* This is a simple WebSocket echo server example.
  * You may compile it with "WITH_OPENSSL=1 make" or with "make" */
 
@@ -42,55 +64,22 @@ void load_file(const char *cstr, Pstr str, bool binary=false) {
     fclose(file);
 }
 
-int main() {
-	constexpr bool USING_SSL = true;
-	constexpr bool IS_SERVER = true;
-	constexpr bool IS_LOCALHOST = true;
-	constexpr int PORT = 9002;
-	
-    /* ws->getUserData returns one of these */
-    struct PerSocketData {
-        /* Fill with user data */
-    };
-	using WS = uWS::WebSocket<USING_SSL, IS_SERVER, PerSocketData>;
-	
-	constexpr int index_html_sz = 2048;
-	char index_html_first_arg[index_html_sz];
-	Pstr index_html = {
-		index_html_first_arg,
-		index_html_sz
-	};
-	load_file("../../client/index.html", index_html);
-	constexpr int main_js_sz = 1024;
-	char main_js_first_arg[main_js_sz];
-	Pstr main_js = {
-		main_js_first_arg,
-		main_js_sz
-	};
-	load_file("../../client/main.js", main_js);
-	constexpr int favicon_sz = 8192+4096;
-	char favicon_first_arg[favicon_sz];
-	Pstr favicon = {
-		favicon_first_arg,
-		favicon_sz
-	};
-	load_file("../../client/favicon.png", favicon, true);
-    /* Keep in mind that uWS::SSLApp({options}) is the same as uWS::App() when compiled without SSL support.
-     * You may swap to using uWS:App() if you don't need SSL */
-	static_assert(USING_SSL && WITH_OPENSSL==1, "change SSLApp to App");
-    uWS::SSLApp app({
-        /* There are example certificates in uWebSockets.js repo */
-        .key_file_name = (IS_LOCALHOST)?
-			"../misc/localhost-key.pem":
-			"../misc/key.pem",
-        .cert_file_name = (IS_LOCALHOST)?
-			"../misc/localhost.pem":
-			"../misc/cert.pem",
-        .passphrase = (IS_LOCALHOST)?
-			"":
-			"1234"
-    });
-	app.ws<PerSocketData>("/*", {
+/* ws->getUserData returns one of these */
+struct PerSocketData {
+	/* Fill with user data */
+};
+
+//using WS = uWS::WebSocket<USING_SSL, IS_SERVER, PerSocketData>;
+template <typename AppType>
+void setup_routes(
+	AppType& app, Pstr index_html, Pstr main_js, Pstr favicon
+){
+/*	if constexpr(std::is_same_v<AppType, uWS::SSLApp>)
+		using WS = uWS::WebSocket<true, true, PerSocketData>;
+	else
+		using WS = uWS::WebSocket<false, true, PerSocketData>;
+*/		
+	app.template ws<PerSocketData>("/*", {
         /* Settings */
         .compression = uWS::CompressOptions(uWS::SHARED_COMPRESSOR | uWS::SHARED_DECOMPRESSOR),
         .sendPingsAutomatically = true,
@@ -99,14 +88,14 @@ int main() {
 		// before HTTP connection turns into WebSocket
         // .upgrade = nullptr,
 		// websocket created successfully
-        .open = [](WS* ws) {
+        .open = [](auto* ws) {
             /* Open event here, you may access ws->getUserData() which points to a PerSocketData struct */
 
 			// TODO
 			puts(".open called");
         },
 		// recvd a message
-        .message = [](WS* ws, std::string_view message, uWS::OpCode opCode) {
+        .message = [](auto* ws, std::string_view message, uWS::OpCode opCode) {
             /* This is the opposite of what you probably want; compress if message is LARGER than 16 kb
              * the reason we do the opposite here; compress if SMALLER than 16 kb is to allow for 
              * benchmarking of large message sending without compression */
@@ -135,7 +124,7 @@ int main() {
         //     /* Not implemented yet */
         // },
 		// client disconnected
-        .close = [](WS* ws, int code, std::string_view message) {
+        .close = [](auto* ws, int code, std::string_view message) {
             /* You may access ws->getUserData() here */
 			
 			// TODO
@@ -143,7 +132,7 @@ int main() {
 			printf("%.*s", (int)message.size(), message.data());
         }
     })
-	.get("/*", [&index_html, &main_js, &favicon](auto* res, auto* req) {
+	.get("/*", [index_html, main_js, favicon](auto* res, auto* req) {
         std::string_view url = req->getUrl();
 		if (DEBUGGING)
 			printf("[DEBUG] Request URL: '%.*s'\n", (int)url.size(), url.data());
@@ -158,7 +147,10 @@ int main() {
 		}
         else if (url == "/health") {
             res->writeHeader("Content-Type", "application/json");
-            res->end(R"({"status":"ok","port":9001})");
+			if constexpr (std::is_same_v<AppType, uWS::SSLApp>)
+				res->end(R"({"status":"ok", "port":})" HTTPSPORT_STR "}");
+			else 
+				res->end(R"({"status":"ok", "port":})" HTTPPORT_STR "}");
         }
 		else if (url == "/favicon.png" ||
 				 url == "/favicon.ico"){
@@ -177,12 +169,68 @@ int main() {
         res->writeHeader("Access-Control-Allow-Headers", "*");
         res->writeStatus("204 No Content");
         res->end();
-    })
-	.listen(PORT, [](us_listen_socket_t* const listen_socket) {
-        if (listen_socket) {
-            printf("Listening on https://localhost:%d and wss://localhost:%d\n", PORT, PORT);
-        } else {
-            puts("Failed to listen");
-        }
-    }).run();
+    });
+}
+
+int main() {
+	
+	
+	constexpr int index_html_sz = 2048;
+	char index_html_first_arg[index_html_sz];
+	Pstr index_html = {
+		index_html_first_arg,
+		index_html_sz
+	};
+	load_file("../../client/index.html", index_html);
+	constexpr int main_js_sz = 1024;
+	char main_js_first_arg[main_js_sz];
+	Pstr main_js = {
+		main_js_first_arg,
+		main_js_sz
+	};
+	load_file("../../client/main.js", main_js);
+	constexpr int favicon_sz = 8192+4096;
+	char favicon_first_arg[favicon_sz];
+	Pstr favicon = {
+		favicon_first_arg,
+		favicon_sz
+	};
+	load_file("../../client/favicon.png", favicon, true);
+    /* Keep in mind that uWS::SSLApp({options}) is the same as uWS::App() when compiled without SSL support.
+     * You may swap to using uWS:App() if you don't need SSL */
+//	static_assert(USING_SSL && WITH_OPENSSL==1, "change SSLApp to App");
+    if constexpr (USING_SSL){
+		uWS::SSLApp https_app({
+			/* There are example certificates in uWebSockets.js repo */
+			.key_file_name = (IS_LOCALHOST)?
+				"../misc/localhost-key.pem":
+				"../misc/key.pem",
+			.cert_file_name = (IS_LOCALHOST)?
+				"../misc/localhost.pem":
+				"../misc/cert.pem",
+			.passphrase = (IS_LOCALHOST)?
+				"":
+				"1234"
+		});
+
+		setup_routes<uWS::SSLApp>(https_app, index_html, main_js, favicon);
+		https_app.listen(HTTPSPORT, [](us_listen_socket_t* const listen_socket) {
+			if (listen_socket) {
+				printf("Listening on https://localhost:%d and wss://localhost:%d\n", HTTPSPORT, HTTPSPORT);
+			} else {
+				puts("Failed to listen HTTPS");
+			}
+		});
+	}
+	uWS::App http_app;
+	setup_routes<uWS::App>(http_app, index_html, main_js, favicon);
+	http_app.listen(HTTPPORT, [](us_listen_socket_t* const listen_socket){
+		if (listen_socket) {
+			printf("Listening on http://localhost:%d and ws://localhost:%d\n", HTTPPORT, HTTPPORT);
+		} else {
+			puts("Failed to listen HTTP");
+		}
+	});
+	// uv_loop is shared, so it doesn't matter what app we are running
+	http_app.run();
 }

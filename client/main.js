@@ -1,8 +1,10 @@
-"use strict";
-
+//"use strict";
+//
 console.log("Hello, world!");
-const WS_URL = 'wss://localhost:9002';
-const ws = new WebSocket(WS_URL);
+const proto = location.protocol === 'https:'? 
+    'wss://':
+    'ws://';
+const ws = new WebSocket(`${proto}${location.host}/ws`);
 
 ws.onopen = () => console.log('WS connected');
 ws.onmessage = (e) => console.log('MSG:', e.data);
