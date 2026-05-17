@@ -8,8 +8,8 @@ async def test():
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
 
-    async with websockets.connect("wss://localhost:23234", ssl=ssl_context) as ws:
-    #async with websockets.connect("ws://localhost:23234") as ws:
+    #async with websockets.connect("wss://localhost:23234", ssl=ssl_context) as ws:
+    async with websockets.connect("ws://localhost:23234") as ws:
         print("✅ Соединение установлено")
         await ws.send("Hello from Python")
         print("📤 Сообщение отправлено")

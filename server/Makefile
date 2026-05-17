@@ -26,7 +26,7 @@ OUT = build/server.exe
 .PHONY: $(OUT) clean
 
 $(OUT): $(SRC) ../deps/uSockets/uSockets.a | build
-	$(CXX) $(SRC) $(CXXFLAGS) $(LDFLAGS) -o $@
+	$(CXX) $(SRC) $(CXXFLAGS) $(LDFLAGS) -o $@ -g
 	
 build:
 	mkdir -p build

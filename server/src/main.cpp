@@ -12,7 +12,7 @@
 #include <type_traits>
 
 constexpr bool DEBUGGING = true;
-constexpr bool USING_SSL = true;
+//constexpr bool USING_SSL = true;
 constexpr bool IS_SERVER = true;
 #define IS_LOCALHOST true
 // I think that I will use setcap
@@ -211,30 +211,29 @@ int main() {
     /* Keep in mind that uWS::SSLApp({options}) is the same as uWS::App() when compiled without SSL support.
      * You may swap to using uWS:App() if you don't need SSL */
 //	static_assert(USING_SSL && WITH_OPENSSL==1, "change SSLApp to App");
-    if constexpr (USING_SSL){
-		uWS::SSLApp https_app({
-			/* There are example certificates in uWebSockets.js repo */
-			.key_file_name = (IS_LOCALHOST)?
-				"../misc/localhost-key.pem":
-				"../misc/key.pem",
-			.cert_file_name = (IS_LOCALHOST)?
-				"../misc/localhost.pem":
-				"../misc/cert.pem",
-			.passphrase = (IS_LOCALHOST)?
-				"":
-				// TODO
-				"1234"
-		});
 
-		setup_routes<uWS::SSLApp>(https_app, index_html, main_js, favicon);
-		https_app.listen(HTTPSPORT, [](us_listen_socket_t* const listen_socket) {
-			if (listen_socket) {
-				printf("Listening on https://localhost:%d and wss://localhost:%d\n", HTTPSPORT, HTTPSPORT);
-			} else {
-				puts("Failed to listen HTTPS");
-			}
-		});
-	}
+	uWS::SSLApp https_app({
+		/* There are example certificates in uWebSockets.js repo */
+		.key_file_name = (IS_LOCALHOST)?
+			"../misc/localhost-key.pem":
+			"../misc/key.pem",
+		.cert_file_name = (IS_LOCALHOST)?
+			"../misc/localhost.pem":
+			"../misc/cert.pem",
+		.passphrase = (IS_LOCALHOST)?
+			"":
+			// TODO
+			"1234"
+	});
+
+	setup_routes<uWS::SSLApp>(https_app, index_html, main_js, favicon);
+	https_app.listen(HTTPSPORT, [](us_listen_socket_t* const listen_socket) {
+		if (listen_socket) {
+			printf("Listening on https://localhost:%d and wss://localhost:%d\n", HTTPSPORT, HTTPSPORT);
+		} else {
+			puts("Failed to listen HTTPS");
+		}
+	});
 	uWS::App http_app;
 	setup_routes<uWS::App>(http_app, index_html, main_js, favicon);
 	http_app.listen(HTTPPORT, [](us_listen_socket_t* const listen_socket){
