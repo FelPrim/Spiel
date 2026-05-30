@@ -3,8 +3,7 @@ CXX = g++
 CXXFLAGS = -std=c++23 \
 	-I../deps/uWebSockets/src \
 	-I../deps/uSockets/src \
-	-DLIBUS_USE_OPENSSL \
-	-Wall -Wextra
+	-DLIBUS_USE_OPENSSL
 
 ifeq ($(OS),Windows_NT)
 PDLDFLAGS := -lws2_32 -lcrypt32 -lbcrypt
@@ -26,7 +25,7 @@ OUT = build/server.exe
 .PHONY: $(OUT) clean
 
 $(OUT): $(SRC) ../deps/uSockets/uSockets.a | build
-	$(CXX) $(SRC) $(CXXFLAGS) $(LDFLAGS) -o $@ -g
+	$(CXX) $(SRC) $(CXXFLAGS) $(LDFLAGS) -o $@
 	
 build:
 	mkdir -p build

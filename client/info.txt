@@ -33,3 +33,19 @@ So, I need to mention P2P and client-server models:
 P2P - 2 "clients" are identical and talking to one another. But, realistically, they can't establish connection without some third entity. In some cases this "third entity" can be a mesh of other clients, but it is really complicated and I don't understand it. In most cases this third entity is just a server. So, we have clients talking to one another and also connections between clients and this dedicated server that are managing the first connection. In case of WebRTC connection between peers is called "data channel" and all stuff for which server is responsible is called "signaling". 
 Client-server - Client is talking only to server and can get information only from server. So, if client wants to send a message to another client, client needs to send to server {content_of_the_message, id_of_recipient} and possibly also information that "this message has type 'message to another client'". 
 Client-server model is easier to implement (because, realistically, if you are wanting P2P to work your signalling will be client-server model, so you always need to implement one) but causes extra latency when client sends message to another client. This is it's biggest flaw, AFAIK.
+
+To make site interactive you should try following order:
+Try using most modern HTML feature (e.g. <details>),
+Try using most modern CSS feature (e.g. :has is able to check predicate),
+Try using Web Animations API,
+Javascript is inevitable (for prod readiness should use something like React U+1F92E)
+
+Also you should remember that calling information about layout state after changes in that state causes browser to apply those changes and that could be pretty bad - so, my idea is following:
+For example we have following situation:
+We want to add a button which moves 50 px to the right when clicked
+And user could click it 2 times per frame
+We need to be able to get current position of button's anchor from js code not calling html's layout properties directly. So, I think that simplest solution is following:
+We store "current position of button's anchor" in an object, which is updated each time Button.on_clicked is called. Function corresponding to the Button.on_clicked should use only that object and not interact with the button. Also we should add update of Button's position in "requestAnimationFrame": it uses that object to synchronize position of Button. After that (and all other procedures changing layout) we should have updated object with new layout information but this transformation is so easy that it can be manually conrolled from js and layout can't catch "transform" changes - they happen at Composite step.
+Style -> Layout -> Paint -> Composite -> Display
+Forced reflow, https://gist.github.com/paulirish/5d52fb081b3570c81e3a
+`will-change` property - https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/will-change
