@@ -1,0 +1,3 @@
+Mod support can be enabled via wasm
+So, the modder's goal is to generate wasm code.
+For native clients, wasmtime can compile AOT, but I'll need Rust toolchain - why not?
