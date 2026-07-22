@@ -1,0 +1,8 @@
+This product includes libh2o and wslay, which are licensed under MIT License.
+
+For details, see the included LICENSE file (MIT for this project, libh2o, wslay), [INSERT_LICENSE_NAME] at [INSERT_LINK_TO_LICENSE_TEXT] (for [INSERT_LIBRARY_NAME]) and visit:
+- https://github.com/h2o/h2o
+- https://github.com/tatsuhiro-t/wslay
+
+Notable mentions:
+- https://github.com/filosottile/mkcert
