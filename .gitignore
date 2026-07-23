@@ -1,7 +1,6 @@
 *.pem
 */build/
 out/
-deps/
 include/
 
 *.so
