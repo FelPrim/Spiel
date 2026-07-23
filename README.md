@@ -1,17 +1,8 @@
+Перед сборкой либо установите зависимости сами, либо:  
+1. Подтяните зависимости с помощью команды `git submodule update --init --recursive --depth 1`  
+2. запустите build_deps_server.sh    
+
 ##### Планируется поддержка (в порядке убывания):
-1. [MSYS2](#msys2)  
-2. [Visual Studio (с clang)](#visual-studio-с-clang)  
-3. [VS Code](#vs-code)  
-4. [CLion](#clion)  
-
-
-
-##### Инструкции по установке:
-###### MSYS2:
-//TODO
-###### Visual Studio (с clang):
-//TODO
-###### VS Code:
-//TODO
-###### CLion:
-//TODO
+1. Visual Studio
+2. VS Code
+3. CLion
