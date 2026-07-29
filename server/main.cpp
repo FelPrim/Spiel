@@ -14,25 +14,34 @@
 #include <utility>
 #include <type_traits>
 
-constexpr bool DEBUGGING = true;
+#define DEBUGGING 1
 //constexpr bool USING_SSL = true;
-constexpr bool IS_SERVER = true;
-#define IS_LOCALHOST true
-// I think that I will use setcap
-#if IS_LOCALHOST
+constexpr bool IS_SERVER = true; // ???
+#define LOCAL 1
+#if LOCAL
+	// -g
 	const char SERVERNAME[] = "localhost";
+	const char MYIP[] = "127.0.0.1";
 	constexpr int HTTPPORT  = 23233;
 	constexpr int HTTPSPORT = 23234;
 	// std::format is taking too long
 	#define HTTPPORT_STR  "23233"
 	#define HTTPSPORT_STR "23234"
+	
+	 // TODO change certs for local dev
+	#define CERTIFICATE_FILEPATH "/etc/letsencrypt/live/spiel.crabdance.com/fullchain.pem"
+    #define PRIVATE_KEY_FILEPATH "/etc/letsencrypt/live/spiel.crabdance.com/privkey.pem"
 #else
-	const char SERVERNAME[] = "???spiel.com, ig???";
+	// march=haswell
+	const char SERVERNAME[] = "spiel.crabdance.com";
+	const char MYIP[] = "0.0.0.0";
 	constexpr int HTTPPORT  = 80;
 	constexpr int HTTPSPORT = 443;
-	// std::format is taking too long
 	#define HTTPPORT_STR  "80"
 	#define HTTPSPORT_STR "443"
+	
+	#define CERTIFICATE_FILEPATH "/etc/letsencrypt/live/spiel.crabdance.com/fullchain.pem"
+    #define PRIVATE_KEY_FILEPATH "/etc/letsencrypt/live/spiel.crabdance.com/privkey.pem"
 #endif
 
 /* This is a simple WebSocket echo server example.
@@ -44,6 +53,7 @@ struct Pstr{
 };
 // .. - server
 // ../.. - Spiel
+// TODO: check if it is okayish
 void load_file(const char *cstr, Pstr str, bool binary=false) {
     FILE* file = fopen(cstr, "rb");
     if (!file) { 
@@ -83,6 +93,7 @@ void load_file(const char *cstr, Pstr str, bool binary=false) {
     fclose(file);
 }
 
+// TODO: check if it is okayish
 void load_and_process_file(const char *dir, const char *name, Pstr str) {
 	assert(strlen(dir) + strlen(name) + 2 <= 256);
 	char cstr[256] = "";
@@ -180,7 +191,7 @@ void load_and_process_file(const char *dir, const char *name, Pstr str) {
     fclose(file);
 }
 
-
+// what is going on
 /* ws->getUserData returns one of these */
 struct PerSocketData {
 	/* Fill with user data */
@@ -217,6 +228,8 @@ void setup_routes(
         .compression = uWS::CompressOptions(uWS::SHARED_COMPRESSOR | uWS::SHARED_DECOMPRESSOR),
         .sendPingsAutomatically = true,
 		
+		
+		// TODO: what's going on???
         /* Handlers */
 		// before HTTP connection turns into WebSocket
         .upgrade = [](auto *res, auto *req, auto *context) {
@@ -238,6 +251,7 @@ void setup_routes(
         .open = [](auto* ws) {
 			puts(".open called");
 			auto* data = ws->getUserData();
+			// so I've wrote this part? why are "@" here?
 			puts("@");
 			printf("%.*s", (int)data->cookie_len, data->cookie);
 			puts("@");
@@ -295,19 +309,20 @@ void setup_routes(
 			res->writeHeader("Content-Type", "application/javascript; charset=utf-8");
 			res->end(main_js.buffer);
 		}*/
-        else if (url == "/health") {
-            res->writeHeader("Content-Type", "application/json");
-			if constexpr (std::is_same_v<AppType, uWS::SSLApp>)
-				res->end(R"({"status":"ok", "port":)" HTTPSPORT_STR "}");
-			else 
-				res->end(R"({"status":"ok", "port":)" HTTPPORT_STR "}");
-        }
+        //else if (url == "/health") {
+        //    res->writeHeader("Content-Type", "application/json");
+		//	if constexpr (std::is_same_v<AppType, uWS::SSLApp>)
+		//		res->end(R"({"status":"ok", "port":)" HTTPSPORT_STR "}");
+		//	else 
+		//		res->end(R"({"status":"ok", "port":)" HTTPPORT_STR "}");
+        //}
         else {
             res->writeStatus("404 Not Found");
             res->end("Not found");
         }
     })
 	.options("/*", [](auto* res, auto* req) {
+		// this headers are stupid, aren't they?
         res->writeHeader("Access-Control-Allow-Origin", "*");
         res->writeHeader("Access-Control-Allow-Headers", "*");
         res->writeStatus("204 No Content");
@@ -340,33 +355,29 @@ int main() {
 
 	uWS::SSLApp https_app({
 		/* There are example certificates in uWebSockets.js repo */
-		.key_file_name = (IS_LOCALHOST)?
-			"../misc/localhost-key.pem":
-			"../misc/key.pem",
-		.cert_file_name = (IS_LOCALHOST)?
-			"../misc/localhost.pem":
-			"../misc/cert.pem",
-		.passphrase = (IS_LOCALHOST)?
-			"":
-			// TODO
-			"1234"
+		.key_file_name = PRIVATE_KEY_FILEPATH,
+		.cert_file_name = CERTIFICATE_FILEPATH
+		//,.passphrase = ""
 	});
 
 	setup_routes<uWS::SSLApp>(https_app, index_html);
 	https_app.listen(HTTPSPORT, [](us_listen_socket_t* const listen_socket) {
 		if (listen_socket) {
-			printf("Listening on https://localhost:%d and wss://localhost:%d\n", HTTPSPORT, HTTPSPORT);
+			puts("Listening on https://"MYIP":"HTTPPORT_STR" and wss://"MYIP":"HTTPSPORT_STR);
 		} else {
 			puts("Failed to listen HTTPS");
+			abort();
 		}
 	});
 	uWS::App http_app;
 	setup_routes<uWS::App>(http_app, index_html);
 	http_app.listen(HTTPPORT, [](us_listen_socket_t* const listen_socket){
 		if (listen_socket) {
-			printf("Listening on http://localhost:%d and ws://localhost:%d\n", HTTPPORT, HTTPPORT);
+			puts("Listening on http://"MYIP":"HTTPPORT_STR" and ws://"MYIP":"HTTPPORT);
 		} else {
 			puts("Failed to listen HTTP");
+			abort();
+			abort();
 		}
 	});
 	// uv_loop is shared, so it doesn't matter what app we are running
