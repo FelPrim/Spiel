@@ -1,0 +1,10 @@
+This product includes uWebSockets (https://github.com/uNetworking/uWebSockets) and uSockets (https://github.com/uNetworking/uSockets), which are licensed under the Apache License, Version 2.0.
+
+For details, see the included LICENSE file (MIT for this project), the Apache 2.0 license at https://www.apache.org/licenses/LICENSE-2.0 (for uWebSockets/uSockets) and visit:
+- https://github.com/uNetworking/uWebSockets
+- https://github.com/uNetworking/uSockets
+
+Notable mentions:
+- [Free DNS](https://freedns.afraid.org/)
+- https://github.com/filosottile/mkcert
+- certbot
