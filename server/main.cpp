@@ -323,8 +323,8 @@ void setup_routes(
     })
 	.options("/*", [](auto* res, auto* req) {
 		// this headers are stupid, aren't they?
-        res->writeHeader("Access-Control-Allow-Origin", "*");
-        res->writeHeader("Access-Control-Allow-Headers", "*");
+        //res->writeHeader("Access-Control-Allow-Origin", "*");
+        //res->writeHeader("Access-Control-Allow-Headers", "*");
         res->writeStatus("204 No Content");
         res->end();
     });

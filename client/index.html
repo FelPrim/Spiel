@@ -8,7 +8,27 @@
 <body>
 	<h1>Hello world</h1>
 	<script id="embedded" type="module">
-		<!-- #include(index.js) -->
-	</script>
+        const response = await fetch("hello.wasm");
+        const bytes = await response.arrayBuffer();
+
+        const wasmMemory = new WebAssembly.Memory({initial: 2}); // почему 2?
+        const {instance} = await WebAssembly.instantiate(
+            bytes,
+            {
+                env: {memory: wasmMemory}
+            }
+        );
+        const wasm = instance.exports;
+        const buffer = new Int32Array(wasmMemory.buffer, );
+        memory[0] = 10;
+        memory[1] = 20;
+        memory[2] = 30;
+
+
+        wasm.process(0, 3);
+        console.log(memory[0]);
+        console.log(memory[1]);
+        console.log(memory[2]);
+    </script>
 </body>
 </html>
