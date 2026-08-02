@@ -2,12 +2,27 @@ console.log("Hello, world!");
 const response = await fetch('spiel.wasm');
 const bytes = await response.arrayBuffer();
 
-const { instance } = await WebAssembly.instantiate(bytes);
-const { alloc, process, get_errno, memory, get_memory_base} = instance.exports;
+let memory;
+
+const importObject = {
+    env: {
+        js_log(ptr, len) {
+            const buf = new Uint8Array(memory.buffer, ptr, len);
+            console.log("[C]:", new TextDecoder().decode(buf));
+        }
+    }
+};
+
+
+const { instance } = await WebAssembly.instantiate(bytes, importObject);
+const { alloc, process, get_errno, get_memory_base} = instance.exports;
+memory = instance.exports.memory;
+
 const ptr = alloc(4, 4, 10);
 if (get_errno() !== 0) {
 	document.getElementById('output').textContent = "Ошибка выделения: " + get_errno();
 }
+
 process(ptr, 10);
 
 const base = get_memory_base();

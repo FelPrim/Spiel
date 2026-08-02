@@ -6,12 +6,24 @@ int32_t err_no = 0;
 volatile alignas(1024) uint8_t Memory[MEMSIZE];
 volatile uint32_t counter = 0;
 
-u32 get_memory_base(void)
-{
+__attribute__((import_module("env"), import_name("js_log"))) extern void js_log(...);
+
+void log_string(const char *str) {
+    uint32_t len = 0;
+    while (str[len]) len++;
+    js_log((uint32_t)(uintptr_t)str, len);
+}
+
+__attribute__((export_name("get_memory_base")))
+u32 get_memory_base(void){
+	log_string("get_memory_base() called from C!");
     return (u32)(uintptr_t)Memory;
 }
 
+__attribute__((export_name("alloc")))
 u32 alloc(i32 alignment, i32 size, i32 count){
+	log_string("get_errno() called from C!");
+
 	//CHECK(alignment < 1024, 52);
 	int32_t waste = 0;
 	if (counter % alignment != 0)
@@ -25,11 +37,15 @@ u32 alloc(i32 alignment, i32 size, i32 count){
 	return return_value;
 }
 
+__attribute__((export_name("get_errno")))
 i32 get_errno(){
+	log_string("get_errno() called from C!");
 	return err_no;
 }
 
+__attribute__((export_name("process")))
 void process(uint32_t ptr, u32 size){
+	log_string("process() called from C!");
 	volatile uint32_t * const arr = (volatile uint32_t *)(Memory + ptr);
 	for (uint32_t i = 0; i < size; ++i)
 		arr[i] = i;
