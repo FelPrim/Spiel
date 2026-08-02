@@ -7,6 +7,7 @@
 </head>
 <body>
 	<h1>Hello world</h1>
+	<div id="output">Загрузка...</div>
 	<script id="embedded" type="module">
 		<!-- #include(index.js) -->
     </script>

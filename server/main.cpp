@@ -15,28 +15,34 @@
 #include <type_traits>
 
 #define DEBUGGING 1
+
 //constexpr bool USING_SSL = true;
-constexpr bool IS_SERVER = true; // ???
+//constexpr bool IS_SERVER = true; // ???
+
+#ifndef LOCAL
 #define LOCAL 1
+#endif
+
 #if LOCAL
 	// -g
 	const char SERVERNAME[] = "localhost";
-	const char MYIP[] = "127.0.0.1";
-	constexpr int HTTPPORT  = 23233;
-	constexpr int HTTPSPORT = 23234;
+	#define FILES_DIR "../client"
+	#define MYIP "127.0.0.1"
+	#define HTTPPORT  23233
+	#define HTTPSPORT 23234
 	// std::format is taking too long
 	#define HTTPPORT_STR  "23233"
 	#define HTTPSPORT_STR "23234"
 	
-	 // TODO change certs for local dev
-	#define CERTIFICATE_FILEPATH "/etc/letsencrypt/live/spiel.crabdance.com/fullchain.pem"
-    #define PRIVATE_KEY_FILEPATH "/etc/letsencrypt/live/spiel.crabdance.com/privkey.pem"
+	#define CERTIFICATE_FILEPATH "../ext/localhost.pem"
+    #define PRIVATE_KEY_FILEPATH "../ext/localhost-key.pem"
 #else
 	// march=haswell
 	const char SERVERNAME[] = "spiel.crabdance.com";
-	const char MYIP[] = "0.0.0.0";
-	constexpr int HTTPPORT  = 80;
-	constexpr int HTTPSPORT = 443;
+	#define FILES_DIR "."
+	#define MYIP "0.0.0.0"
+	#define HTTPPORT   80
+	#define HTTPSPORT 443
 	#define HTTPPORT_STR  "80"
 	#define HTTPSPORT_STR "443"
 	
@@ -54,12 +60,11 @@ struct Pstr{
 // .. - server
 // ../.. - Spiel
 // TODO: check if it is okayish
-void load_file(const char *cstr, Pstr str, bool binary=false) {
+void load_file(const char *cstr, Pstr* str, bool binary=false) {
     FILE* file = fopen(cstr, "rb");
     if (!file) { 
 		// file should exist
 		puts(cstr);
-		puts("A");
 		perror("fopen"); 
 		abort(); 
 	}
@@ -73,24 +78,28 @@ void load_file(const char *cstr, Pstr str, bool binary=false) {
 	}
     fseek(file, 0, SEEK_SET);
     size_t required_size = file_sz + (binary ? 0 : 1);
-	if (str.size < required_size) {
+	if (str->size < required_size) {
 		// should be able to store file in buffer
-		printf("buffersize: %d\nfilesize: %ld\n", str.size, file_sz);
+		puts(str->buffer);
+		printf("buffersize: %d\nfilesize: %ld\n", str->size, file_sz);
 		puts("Make buffersize larger!");
 		fclose(file);
 		abort();
 	}
-    size_t bytes_read = fread(str.buffer, 1, file_sz, file);
+    size_t bytes_read = fread(str->buffer, 1, file_sz, file);
 	if(bytes_read != file_sz){
 		// error when reading file
 		perror("bytes_read != file_sz"); 
 		fclose(file);
 		abort();
 	}
-	if (not binary)
-		str.buffer[bytes_read] = '\0';
-	str.size = bytes_read;
+	if (!binary)
+		str->buffer[bytes_read] = '\0';
+	str->size = bytes_read;
     fclose(file);
+	//FILE* test = fopen("test", "wb");
+	//fwrite(str->buffer, bytes_read, 1, test);
+	//fclose(test);
 }
 
 // TODO: check if it is okayish
@@ -216,7 +225,7 @@ struct PerSocketData {
 //using WS = uWS::WebSocket<USING_SSL, IS_SERVER, PerSocketData>;
 template <typename AppType>
 void setup_routes(
-	AppType& app, Pstr index_html
+	AppType& app, Pstr index_html, Pstr wasm
 ){
 /*	if constexpr(std::is_same_v<AppType, uWS::SSLApp>)
 		using WS = uWS::WebSocket<true, true, PerSocketData>;
@@ -252,9 +261,9 @@ void setup_routes(
 			puts(".open called");
 			auto* data = ws->getUserData();
 			// so I've wrote this part? why are "@" here?
-			puts("@");
+		//	puts("@");
 			printf("%.*s", (int)data->cookie_len, data->cookie);
-			puts("@");
+		//	puts("@");
         },
 		// recvd a message
         .message = [](auto* ws, std::string_view message, uWS::OpCode opCode) {
@@ -296,7 +305,7 @@ void setup_routes(
 			printf("%.*s", (int)message.size(), message.data());
         }
     })
-	.get("/*", [index_html](auto* res, auto* req) {
+	.get("/*", [index_html, wasm](auto* res, auto* req) {
         std::string_view url = req->getUrl();
 		if (DEBUGGING)
 			printf("[DEBUG] Request URL: '%.*s'\n", (int)url.size(), url.data());
@@ -305,6 +314,10 @@ void setup_routes(
             res->writeHeader("Content-Type", "text/html; charset=utf-8");
 			res->end(index_html.buffer);
         }
+		else if (url == "/spiel.wasm"){
+			res->writeHeader("Content-Type", "application/wasm");
+			res->end(std::string_view(wasm.buffer, wasm.size));
+		}
 /*		else if (url == "/main.js"){
 			res->writeHeader("Content-Type", "application/javascript; charset=utf-8");
 			res->end(main_js.buffer);
@@ -339,8 +352,14 @@ int main() {
 		index_html_first_arg,
 		index_html_sz
 	};
-	load_and_process_file("../../client", "index.html", index_html);
-
+	load_and_process_file(FILES_DIR, "index.htmlbackup", index_html);
+	constexpr int wasm_sz = 1024;
+	char wasm_first_arg[wasm_sz];
+	Pstr wasm = {
+		wasm_first_arg,
+		wasm_sz
+	};
+	load_file(FILES_DIR "/spiel.wasm", &wasm, true);
 /*	constexpr int main_js_sz = 1024;
 	char main_js_first_arg[main_js_sz];
 	Pstr main_js = {
@@ -360,20 +379,20 @@ int main() {
 		//,.passphrase = ""
 	});
 
-	setup_routes<uWS::SSLApp>(https_app, index_html);
+	setup_routes<uWS::SSLApp>(https_app, index_html, wasm);
 	https_app.listen(HTTPSPORT, [](us_listen_socket_t* const listen_socket) {
 		if (listen_socket) {
-			puts("Listening on https://"MYIP":"HTTPPORT_STR" and wss://"MYIP":"HTTPSPORT_STR);
+			puts("Listening on https://" MYIP ":" HTTPSPORT_STR " and wss://" MYIP ":" HTTPSPORT_STR);
 		} else {
 			puts("Failed to listen HTTPS");
 			abort();
 		}
 	});
 	uWS::App http_app;
-	setup_routes<uWS::App>(http_app, index_html);
+	setup_routes<uWS::App>(http_app, index_html, wasm);
 	http_app.listen(HTTPPORT, [](us_listen_socket_t* const listen_socket){
 		if (listen_socket) {
-			puts("Listening on http://"MYIP":"HTTPPORT_STR" and ws://"MYIP":"HTTPPORT);
+			puts("Listening on http://" MYIP ":" HTTPPORT_STR " and ws://" MYIP ":" HTTPPORT_STR);
 		} else {
 			puts("Failed to listen HTTP");
 			abort();
