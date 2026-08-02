@@ -13,7 +13,6 @@
 *.exp
 *.ifc
 *.pcm
-*.a
 *.la
 *.lo
 *.lai
