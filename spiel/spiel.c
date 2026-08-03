@@ -11,6 +11,13 @@ __attribute__((import_module("env"), import_name("js_log"))) extern void js_log(
 void log_string(const char *str) {
     uint32_t len = 0;
     while (str[len]) len++;
+	js_log((uint32_t)(uintptr_t)str, len);
+}
+
+void CHECK(bool value, const char *err_msg){
+	if (likely(value))
+		return;
+	log_string(err_msg);
 }
 
 __attribute__((export_name("get_memory_base")))
@@ -21,7 +28,7 @@ u32 get_memory_base(void){
 __attribute__((export_name("alloc")))
 u32 alloc(i32 alignment, i32 size, i32 count){
 
-	//CHECK(alignment < 1024, 52);
+	CHECK(alignment > 1024, "testing errors");
 	int32_t waste = 0;
 	if (counter % alignment != 0)
 		waste = alignment - counter % alignment;

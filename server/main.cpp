@@ -50,6 +50,177 @@
     #define PRIVATE_KEY_FILEPATH "/etc/letsencrypt/live/spiel.crabdance.com/privkey.pem"
 #endif
 
+#include "ankerl/unordered_dense.h"
+
+// Idea: 
+// login: char[64] - salt: char[32] - token: sha256(login+password+salt) = char[32]
+// password: char[64]	
+// login -> Tuple. token -> Tuple
+// struct AuthTuple {
+// 	char login[64];
+// 	char salt[32];
+// 	char token[32];
+// };
+struct AuthDB{
+	struct TokenHash {
+		size_t operator()(const std::array<uint8_t, 32>& b) const noexcept {
+			uint64_t x;
+			static_assert(sizeof(size_t) == 8);
+			std::memcpy(&x, b.data(), 8);
+			return static_cast<const size_t>(x);
+		}
+	};
+	struct LoginValue{
+		std::array<uint8_t, 32> salt;
+		std::array<uint8_t, 32> token;
+	};
+	struct TokenValue{
+		std::array<uint8_t, 64> login;
+	};
+	ankerl::unordered_dense::map<const std::array<uint8_t, 32>, TokenValue, TokenHash> token_to_login;
+	ankerl::unordered_dense::map<const std::array<uint8_t, 64>, LoginValue> login_to_token;
+	// maybe should add FILE* here?
+	// Maybe also need to add RNG context for salt generation?  
+	// maybe need to add hook to event loop
+
+	// file_add_changes
+	// file_change_changes
+	// file_remove_changes
+	// I think using 3 different containers with more strictly typed data is better, than 1 with more dynamic
+
+	AuthDB(
+		// should be able to "capture" uWS event loop
+
+	){
+		// initialize token_to_login and login_to_token with values from predefined binary file.
+		// Also they should be able to store at least 1024 elements each
+		// This file is literally a vector of AuthTuples. So it should be defined as following:
+		// 		First 8 bytes - uint64_t size of this array
+		// 		128 bytes - first elem of array:
+		//			64 bytes - login
+		//			32 bytes - salt
+		//			32 bytes - token
+		//		128 bytes - second
+		//		... 
+		// Also it would be really cool if I could hook an event loop used by uWS::App and 
+		// start saving maps info into file every N seconds
+		// I don't know how to save this info smartly by rewriting only necessary parts of the file
+		// Maybe it is not a bad idea to store changes to the file in additional variable (and nullify it after every synch)
+	}
+	~AuthDB(){
+		// should close file with storing everything
+	}
+
+	// should use std::expected instead
+	const std::array<uint8_t, 32> login_or_register(
+		const std::array<uint8_t, 64>& login,
+		const std::array<uint8_t, 64>& passwd
+	){
+		/*
+		{salt, token} = login_to_token.find(login);
+		if (was_unable_to_find){
+			salt = random_generate();
+			uint8_t tmp[128];
+			memcpy(tmp, login, 64);
+			memcpy(tmp+64, passwd, 32);
+			memcpy(tmp+96m salt, 32);
+			token = sha256(tmp);
+			login_to_token.add(login: {salt, token});
+			token_to_login.add(token: login);
+
+			file_add_changes.add({login, salt, token});
+			return token;
+		}
+		else {
+			uint8_t tmp[128];
+			memcpy(tmp, login, 64);
+			memcpy(tmp+64, passwd, 32);
+			memcpy(tmp+96, salt, 32);
+			maybetoken = sha256(tmp);
+
+			if (maybetoken == token){
+				// SUCCESS
+				return token;
+			}
+			else {
+				// FAILED
+				return std::array<uint8_t, 32>(0);
+			}
+		}
+		*/
+	}
+
+	// should use std::expected instead
+	const std::array<uint8_t, 64> auth(const std::array<uint8_t, 32> token) const {
+		/*
+		login = token_to_login.find(token);
+		if (was_unable_to_find)
+			return std::array>uint8_t, 64>(0);
+		return login;
+		*/
+	}
+
+	// should use std::expected instead
+	const std::array<uint8_t, 32> new_token(
+		const std::array<uint8_t, 64>& login,
+		const std::array<uint8_t, 64>& passwd
+	){
+		/*
+		{salt, token} = login_to_token.find(login);
+		if (was_unable_to_find)
+			return std::array>uint8_t, 32>(0);
+		uint8_t tmp[128];
+		memcpy(tmp, login, 64);
+		memcpy(tmp+64, passwd, 32);
+		memcpy(tmp+96, salt, 32);
+		maybetoken = sha256(tmp);
+		if (maybetoken != token){
+			return std::array>uint8_t, 32>(255);
+		}
+	
+		new_salt = random_generate();
+		memcpy(tmp+96, new_salt, 32);
+		new_token = sha256(tmp);
+
+		login_to_token.change(login: {new_salt, new_token});
+		token_to_login.remove(token: login);
+		token_to_login.add(new_token: login);
+
+		file_change_changes.add(
+			{login, salt, token},
+			{login, new_salt, new_token}
+		);
+		return new_token;
+	*/
+	}
+	bool remove(
+		const std::array<uint8_t, 64>& login,
+		const std::array<uint8_t, 64>& passwd
+	){
+		/*
+		{salt, token} = login_to_token.find(login);
+		if (was_unable_to_find)
+			return std::array>uint8_t, 32>(0);
+		uint8_t tmp[128];
+		memcpy(tmp, login, 64);
+		memcpy(tmp+64, passwd, 32);
+		memcpy(tmp+96, salt, 32);
+		maybetoken = sha256(tmp);
+		if (maybetoken != token){
+			return false;
+		}
+		
+		login_to_token.remove(login: {salt, token});
+		token_to_login.remove(token: login)
+		file_remove_changes.add(
+			{login, salt, token}
+		);
+		return true;
+		*/
+	}
+
+} authDB;
+
 /* This is a simple WebSocket echo server example.
  * You may compile it with "WITH_OPENSSL=1 make" or with "make" */
 
@@ -207,19 +378,7 @@ struct PerSocketData {
 	static constexpr size_t MAX_COOKIE = 255;
 	char cookie[MAX_COOKIE];
     unsigned char cookie_len = 0;  
-
-	PerSocketData(std::string_view the_cookie){
-		assert(the_cookie.size() < MAX_COOKIE);
-		memcpy(cookie, the_cookie.data(), the_cookie.size());
-		cookie_len = the_cookie.size();
-	}
-	PerSocketData(){
-		assert(0);
-//		std::unreachable();
-	}
-//	PerSocketData(std::initializer_list<> a){
-//		assert(a.empty());
-//	}
+	
 };
 
 //using WS = uWS::WebSocket<USING_SSL, IS_SERVER, PerSocketData>;
@@ -241,29 +400,30 @@ void setup_routes(
 		// TODO: what's going on???
         /* Handlers */
 		// before HTTP connection turns into WebSocket
-        .upgrade = [](auto *res, auto *req, auto *context) {
-			std::string_view raw = req->getHeader("cookie");
-			if (raw.size() >= PerSocketData::MAX_COOKIE) {
-				res->writeStatus("400 Bad Request")->end();
-				return;
-			}
 
-			res->template upgrade<PerSocketData>(
-                /* We initialize PerSocketData struct here */
-				std::move(PerSocketData(raw)),
-				req->getHeader("sec-websocket-key"),
-                req->getHeader("sec-websocket-protocol"),
-                req->getHeader("sec-websocket-extensions"),
-                context);
-		},
+        // .upgrade = [](auto *res, auto *req, auto *context) {
+		// 	std::string_view raw = req->getHeader("cookie");
+		// 	if (raw.size() >= PerSocketData::MAX_COOKIE) {
+		// 		res->writeStatus("400 Bad Request")->end();
+		// 		return;
+		// 	}
+// 
+		// 	res->template upgrade<PerSocketData>(
+        //         /* We initialize PerSocketData struct here */
+		// 		std::move(PerSocketData(raw)),
+		// 		req->getHeader("sec-websocket-key"),
+        //         req->getHeader("sec-websocket-protocol"),
+        //         req->getHeader("sec-websocket-extensions"),
+        //         context);
+		// },
 		// websocket created successfully
         .open = [](auto* ws) {
 			puts(".open called");
-			auto* data = ws->getUserData();
-			// so I've wrote this part? why are "@" here?
-		//	puts("@");
-			printf("%.*s", (int)data->cookie_len, data->cookie);
-		//	puts("@");
+			// auto* data = ws->getUserData();
+			// // so I've wrote this part? why are "@" here?
+			// puts("@");
+			// printf("%.*s", (int)data->cookie_len, data->cookie);
+			// puts("@");
         },
 		// recvd a message
         .message = [](auto* ws, std::string_view message, uWS::OpCode opCode) {
@@ -308,7 +468,7 @@ void setup_routes(
 	.get("/*", [index_html, wasm](auto* res, auto* req) {
         std::string_view url = req->getUrl();
 		if (DEBUGGING)
-			printf("[DEBUG] Request URL: '%.*s'\n", (int)url.size(), url.data());
+			printf("[DEBUG] GET: '%.*s'\n", (int)url.size(), url.data());
         
         if (url == "/") {
             res->writeHeader("Content-Type", "text/html; charset=utf-8");
@@ -334,6 +494,17 @@ void setup_routes(
             res->end("Not found");
         }
     })
+	.post("/*", [](auto* res, auto* req){
+        std::string_view url = req->getUrl();
+		if (DEBUGGING)
+			printf("[DEBUG] POST: '%.*s'\n", (int)url.size(), url.data());
+		if (url == "/auth") {
+			// generate cookie
+            res->writeStatus("{token: \"????\"}");
+            res->end();
+        }
+		
+	})
 	.options("/*", [](auto* res, auto* req) {
 		// this headers are stupid, aren't they?
         //res->writeHeader("Access-Control-Allow-Origin", "*");
@@ -346,7 +517,7 @@ void setup_routes(
 int main() {
 	
 	
-	constexpr int index_html_sz = 2048;
+	constexpr int index_html_sz = 4096;
 	char index_html_first_arg[index_html_sz];
 	Pstr index_html = {
 		index_html_first_arg,

@@ -1,3 +1,6 @@
 [submodule "deps/uWebSockets"]
 	path = deps/uWebSockets
 	url = https://github.com/uNetworking/uWebSockets.git
+[submodule "deps/unordered_dense"]
+	path = deps/unordered_dense
+	url = https://github.com/martinus/unordered_dense.git
