@@ -1,4 +1,5 @@
 set -x
+mkdir -p ../build
 g++ -std=c++20 -march=haswell -O3 -flto \
     -DLOCAL=0 \
     -DLIBUS_USE_OPENSSL \

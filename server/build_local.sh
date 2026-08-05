@@ -1,4 +1,5 @@
 set -x
+mkdir -p ../build
 clang++-22 -std=c++26 -g \
     -DLIBUS_USE_OPENSSL \
     -I ../ext/native/include/uWebSockets \

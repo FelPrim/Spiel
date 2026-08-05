@@ -1,0 +1,2 @@
+set -x
+mkcert localhost
