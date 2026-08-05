@@ -50,7 +50,7 @@
     #define PRIVATE_KEY_FILEPATH "/etc/letsencrypt/live/spiel.crabdance.com/privkey.pem"
 #endif
 
-#include "auth.h"
+//#include "auth.h"
 
 /* This is a simple WebSocket echo server example.
  * You may compile it with "WITH_OPENSSL=1 make" or with "make" */
