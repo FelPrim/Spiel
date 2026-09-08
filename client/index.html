@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+	<meta charset="utf-8">
+	<title>Spiel</title>
+	<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' font-family='Times New Roman, Times, serif' font-size='100' fill='black' text-anchor='middle' dominant-baseline='central'%3ES%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<video src="video.webm" id="bg" autoplay loop muted playsinline preload="auto"></video>
+	<form id="auth" action="/auth" method="post">
+		<label for="username">Логин</label>
+		  <input
+			id="login"
+			placeholder="Логин" 
+			type="text"
+			name="username"
+			autocomplete="username"
+			inputmode="text"
+			required
+		  >
+		  <label for="password">Пароль</label>
+		  <input
+			id="password"
+			type="password"
+			name="password"
+			placeholder="Пароль" 
+			autocomplete="current-password"
+			required
+		  >
+		<button type="submit">Зарегистрироваться/Войти</button>
+    </form>
+    <script src="main.js"></script>
+</body>
+</html>

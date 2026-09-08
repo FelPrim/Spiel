@@ -1,0 +1,80 @@
+:root {
+	--bg-top: 	oklch(0.3 0.016 240);
+	--bg: 		oklch(0.1 0.01 240);
+	--bg-bot:  oklch(0 0 240);
+	background-color: 	oklch(0 0 240);
+	
+	--text-cool: oklch(0.95 0.008 240);
+	color: 	oklch(0.75 0.012 240);
+	
+	--border-top:  oklch(0.6 0.012 240);
+	
+	font-family: "Times New Roman", Times, serif;
+}
+#bg {
+	position: fixed;
+	inset: 0;
+	object-fit: cover;
+	z-index: -2;      
+}
+form {
+	position: absolute;
+	top: 50%; left: 50%;
+	translate: -50% -50%;
+	
+	background: color-mix(in oklch, var(--bg) 25%, transparent);
+	backdrop-filter: blur(4px);
+	
+	padding: 2.5rem;
+	border-radius: 16px;
+	border: 1px solid var(--border-top);
+	box-shadow: 0 8px 32px #0003;
+	
+	display: flex;
+	flex-flow: column;
+	gap: 1rem;
+	width: min(320px, 90vw);
+	z-index: 1;
+}
+input {
+	padding: 0.75rem 1rem;
+	border-radius: 8px;
+	border: 1px solid var(--border-top);
+	background-color: color-mix(in oklch, var(--bg-bot) 40%, transparent);
+	color: var(--text-cool);
+	font-size: 1rem;
+	outline: none;
+	transition: border-color 0.2s, background-color 0.2s;
+}
+label, button{
+	color: var(--text-cool);
+    font-weight: 600;
+}
+button {
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    border: none;
+    background: linear-gradient(
+		0deg, 
+		var(--bg) 95%, 
+		var(--bg-top)
+	);
+    transition: background 0.3s ease, transform 0.1s;
+    margin-top: 0.5rem;
+}
+button:hover { 
+    background: linear-gradient(
+		0deg, 
+		var(--bg), 
+		var(--bg-top)
+	);
+}
+button:active { 
+    transform: scale(0.98); 
+}
+#errorMsg {
+	color: #ff6b6b; 
+	font-size: 0.85rem;
+	margin: 0;
+	min-height: 1.2em;
+}
