@@ -37,16 +37,16 @@ body {
 }
 
 #map-display {
+    position: relative; /* для абсолютного позиционирования overlay */
     max-width: 90vw;
     max-height: 70vh;
-    /* без overflow: auto, чтобы не было прокрутки */
 }
 
 #map-display img {
     display: block;
     max-width: 100%;
     max-height: 70vh;
-    object-fit: contain; /* чтобы сохранить пропорции */
+    object-fit: contain;
 }
 
 #map-status {

@@ -34,7 +34,9 @@ export async function exportVoronoi(overlay, downloadElement) {
         vCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
         vCtx.fill();
     }
-
+	if (state.brushCanvas) {
+		vCtx.drawImage(state.brushCanvas, 0, 0);
+	}
     // PNG для voronoj.png
     const pngBlob = await new Promise(resolve => voronojCanvas.toBlob(resolve, 'image/png'));
 
