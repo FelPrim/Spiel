@@ -1,13 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('auth');
-    const messageContainer = document.createElement('div');
-    messageContainer.id = 'auth-message';
-    document.body.appendChild(messageContainer);
+
 
     // Функция для отображения состояния "авторизован"
     function showLoggedIn(username) {
 		form.style.display = 'none';
-		messageContainer.textContent = `Добро пожаловать, ${username}!`;
 		document.getElementById('main-menu').style.display = 'flex';
 	}
 
@@ -15,7 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Функция для отображения формы входа
 	function showLoginForm() {
 		form.style.display = 'block';
-		messageContainer.textContent = '';
 		document.getElementById('main-menu').style.display = 'none';
 	}
 
