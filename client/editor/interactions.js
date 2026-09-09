@@ -359,7 +359,7 @@ export function initInteractions(viewport, preview, overlay) {
 
         // Запрещаем клавиши переключения режимов в редакторе
         if (state.mode === 'editor') {
-            if (['KeyA', 'Backspace', 'KeyC'].includes(e.code)) {
+            if (['KeyA', 'KeyR', 'KeyC'].includes(e.code)) {
                 e.preventDefault();
                 return;
             }
@@ -408,7 +408,7 @@ export function initInteractions(viewport, preview, overlay) {
                     updateCursor(viewport);
                 }
                 break;
-            case 'Backspace':
+            case 'KeyR':
                 if (state.mode !== 'editor') {
                     e.preventDefault();
                     setMode('delete');
