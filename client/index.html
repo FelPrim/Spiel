@@ -31,8 +31,18 @@
 		<button type="submit">Зарегистрироваться/Войти</button>
     </form>
 	<div id="main-menu" style="display: none;">
+
+		<div id="lobby-controls">
+			<input type="text" id="lobby-code" maxlength="6" 
+				   placeholder="Код лобби" autocomplete="off">
+			<div class="lobby-buttons">
+				<button id="create-lobby">Создать лобби</button>
+				<button id="join-lobby">Присоединиться</button>
+			</div>
+			<div id="lobby-status"></div>
+		</div>
+		
 		<button onclick="location.href='editor/editor.html'">Редактор карт</button>
-		<!-- Сюда можно добавить другие кнопки -->
 	</div>
     <script src="main.js"></script>
 </body>

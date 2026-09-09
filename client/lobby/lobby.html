@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Лобби</title>
+    <link rel="stylesheet" href="lobby.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+    <a href="../index.html" id="back-to-main">На главную</a>
+
+    <div id="map-container">
+        <button id="load-map">Загрузить карту</button>
+        <input type="file" id="map-file" accept=".spielmap" style="display: none;">
+        <div id="map-display">
+            <!-- Сюда будет добавлено изображение и невидимый canvas -->
+        </div>
+        <div id="map-status"></div>
+    </div>
+
+    <script src="lobby.js"></script>
+</body>
+</html>

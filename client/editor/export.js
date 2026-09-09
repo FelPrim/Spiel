@@ -15,53 +15,28 @@ export async function exportVoronoi(overlay, downloadElement) {
     const height = overlay.height;
     if (!width || !height) return;
 
-    // Создаём canvas для PNG диаграммы
-    const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = width;
-    exportCanvas.height = height;
-    const ctx = exportCanvas.getContext('2d');
-
     const delaunay = d3.Delaunay.from(state.points.map(p => [p.x, p.y]));
     const voronoi = delaunay.voronoi([0, 0, width, height]);
 
     const colors = state.editorColors || generateUniqueColors(state.points.length);
 
-    // Рисуем ячейки на временном canvas
-    const cellsCanvas = document.createElement('canvas');
-    cellsCanvas.width = width;
-    cellsCanvas.height = height;
-    const cellsCtx = cellsCanvas.getContext('2d');
+    // Создаём canvas для voronoj.png (детектор провинций)
+    const voronojCanvas = document.createElement('canvas');
+    voronojCanvas.width = width;
+    voronojCanvas.height = height;
+    const vCtx = voronojCanvas.getContext('2d');
+
+    // Рисуем ячейки непрозрачными, без мазков
     for (let i = 0; i < state.points.length; i++) {
         const [r, g, b] = intToRgb(colors[i]);
-        cellsCtx.beginPath();
-        voronoi.renderCell(i, cellsCtx);
-        cellsCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        cellsCtx.fill();
+        vCtx.beginPath();
+        voronoi.renderCell(i, vCtx);
+        vCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        vCtx.fill();
     }
 
-    // Накладываем ячейки с прозрачностью
-    ctx.globalAlpha = state.fillAlpha;
-    ctx.drawImage(cellsCanvas, 0, 0);
-    ctx.globalAlpha = 1.0;
-
-    // Накладываем мазки кисти
-    if (state.brushCanvas) {
-        const maskCanvas = document.createElement('canvas');
-        maskCanvas.width = width;
-        maskCanvas.height = height;
-        const maskCtx = maskCanvas.getContext('2d');
-        maskCtx.drawImage(state.brushCanvas, 0, 0);
-
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.drawImage(maskCanvas, 0, 0);
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = state.fillAlpha;
-        ctx.drawImage(maskCanvas, 0, 0);
-        ctx.globalAlpha = 1.0;
-    }
-
-    // Преобразуем PNG canvas в blob
-    const pngBlob = await new Promise(resolve => exportCanvas.toBlob(resolve, 'image/png'));
+    // PNG для voronoj.png
+    const pngBlob = await new Promise(resolve => voronojCanvas.toBlob(resolve, 'image/png'));
 
     // Генерируем JSON
     const points = state.points.map(p => ({ x: p.x, y: p.y }));
@@ -81,7 +56,7 @@ export async function exportVoronoi(overlay, downloadElement) {
     };
     const jsonBlob = new Blob([JSON.stringify(graphData, null, 2)], { type: 'application/json' });
 
-    // Получаем имя и расширение исходного файла
+    // Имя архива
     const originalName = state.originalFile.name;
     const ext = originalName.split('.').pop();
     const baseName = originalName.replace(/\.[^/.]+$/, '');
@@ -94,7 +69,6 @@ export async function exportVoronoi(overlay, downloadElement) {
 
     const zipBlob = await zip.generateAsync({ type: 'blob' });
 
-    // Скачиваем архив
     const url = URL.createObjectURL(zipBlob);
     const a = document.createElement('a');
     a.href = url;
