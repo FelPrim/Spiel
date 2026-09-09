@@ -194,6 +194,7 @@ brushSizeInput.addEventListener('input', (e) => {
 fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    state.originalFile = file;
     if (preview.src && preview.src.startsWith('blob:')) {
         URL.revokeObjectURL(preview.src);
     }

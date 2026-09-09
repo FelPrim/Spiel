@@ -44,6 +44,7 @@ export const state = {
     lastDrawX: 0,
     lastDrawY: 0,
     cellsCanvas: null,
+	originalFile: null,
 	editorToolChangeCallback: null // устанавливается в main.js
 };
 
