@@ -1,0 +1,179 @@
+/* ===== Общие переменные (как в основном style.css) ===== */
+:root {
+    --bg-top:       oklch(0.3 0.016 240);
+    --bg:           oklch(0.1 0.01 240);
+    --bg-bot:       oklch(0 0 240);
+    --text-cool:    oklch(0.95 0.008 240);
+    --text-default: oklch(0.75 0.012 240);
+    --border-top:   oklch(0.6 0.012 240);
+}
+
+/* ===== Базовые стили ===== */
+body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg-bot);
+    color: var(--text-default);
+    font-family: "Times New Roman", Times, serif;
+}
+
+#viewport {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    z-index: -1;
+}
+
+#preview {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+}
+
+#overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    pointer-events: none;
+}
+
+/* ===== Стили панелей ===== */
+#controls,
+#editor-controls {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 10;
+
+    background: color-mix(in oklch, var(--bg) 35%, transparent);
+    backdrop-filter: blur(6px);
+
+    padding: 1rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-top);
+    box-shadow: 0 4px 16px #0003;
+
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    max-width: 90vw;
+}
+
+/* Скрытие панелей в зависимости от режима */
+#controls {
+    display: flex;               /* видна по умолчанию */
+}
+body.editor-mode #controls {
+    display: none;
+}
+
+#editor-controls {
+    display: none;               /* скрыта по умолчанию */
+}
+body.editor-mode #editor-controls {
+    display: flex;
+}
+
+/* ===== Кнопки ===== */
+button,
+#back-to-main,
+#download {
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--text-cool);
+    background: linear-gradient(0deg, var(--bg) 95%, var(--bg-top));
+    border: none;
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.3s ease, transform 0.1s, opacity 0.2s;
+    font-size: 0.9rem;
+}
+
+button:hover,
+#back-to-main:hover,
+#download:hover {
+    background: linear-gradient(0deg, var(--bg), var(--bg-top));
+}
+
+button:active,
+#back-to-main:active,
+#download:active {
+    transform: scale(0.98);
+}
+
+button:disabled,
+#download:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Активная кнопка режима */
+#controls button.active,
+#editor-controls button.active {
+    background: var(--border-top);
+    color: var(--bg-bot);
+}
+
+/* ===== Группы стилей (цвет, прозрачность) ===== */
+.style-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-cool);
+    font-size: 0.85rem;
+}
+
+.style-group input[type="color"] {
+    width: 30px;
+    height: 25px;
+    border: none;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.style-group input[type="range"] {
+    width: 70px;
+    cursor: pointer;
+	accent-color: #007bff;
+}
+
+/* ===== Поле выбора файла ===== */
+#file {
+    color: var(--text-cool);
+    font-size: 0.85rem;
+}
+
+/* ===== Ссылка "На главную" ===== */
+#back-to-main {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 20;
+}
+
+/* ===== Ссылка "Скачать" ===== */
+#download {
+    margin-left: 8px;
+}
+
+/* ===== Значение размера кисти ===== */
+#brush-size-value {
+    min-width: 20px;
+    text-align: center;
+    color: var(--text-cool);
+}
+
+/* ===== Кнопка пипетки ===== */
+#eyedropper.active {
+    background: var(--border-top);
+    color: var(--bg-bot);
+}

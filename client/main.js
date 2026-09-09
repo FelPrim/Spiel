@@ -6,16 +6,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Функция для отображения состояния "авторизован"
     function showLoggedIn(username) {
-        form.style.display = 'none';
-        messageContainer.textContent = `Добро пожаловать, ${username}!`;
-        // Здесь можно добавить дополнительные элементы интерфейса
-    }
+		form.style.display = 'none';
+		messageContainer.textContent = `Добро пожаловать, ${username}!`;
+		document.getElementById('main-menu').style.display = 'flex';
+	}
+
 
     // Функция для отображения формы входа
-    function showLoginForm() {
-        form.style.display = 'block';
-        messageContainer.textContent = '';
-    }
+	function showLoginForm() {
+		form.style.display = 'block';
+		messageContainer.textContent = '';
+		document.getElementById('main-menu').style.display = 'none';
+	}
 
     // 1. Автоматическая попытка авторизации при загрузке страницы
     fetch('/me')
