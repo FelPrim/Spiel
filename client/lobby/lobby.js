@@ -1,3 +1,83 @@
+// ================== Подключение к лобби (SSE) ==================
+(function () {
+    const codeDisplay = document.getElementById('lobby-code-display');
+    const countEl = document.getElementById('participants-count');
+    const listEl = document.getElementById('participants-list');
+
+    const lobbyCode =
+        new URLSearchParams(location.search).get('code') ||
+        sessionStorage.getItem('lobbyCode');
+
+    if (codeDisplay) codeDisplay.textContent = lobbyCode || '—';
+
+    function renderParticipants(names) {
+        countEl.textContent = names.length;
+        listEl.innerHTML = '';
+        for (const name of names) {
+            const li = document.createElement('li');
+            li.textContent = name;
+            listEl.appendChild(li);
+        }
+    }
+
+    let eventSource = null;
+
+    async function init() {
+        // 1. Проверяем, что сессия жива
+        try {
+			const r = await fetch('/me');
+			if (!r.ok) { location.href = '../index.html'; return; }
+		} catch (_) { location.href = '../index.html'; return; }
+
+		// 2. Проверяем, что лобби реально существует
+		if (!lobbyCode) { location.href = '../index.html'; return; }
+
+		try {
+			const r = await fetch(`/lobby/${encodeURIComponent(lobbyCode)}/join`, {
+				method: 'POST'
+			});
+			if (!r.ok) {
+				// лобби нет или код неверного формата — назад на главную
+				location.href = '../index.html';
+				return;
+			}
+		} catch (_) { location.href = '../index.html'; return; }
+
+        // 3. Открываем SSE — именно этот момент считаем «входом в лобби»
+        eventSource = new EventSource(`/lobby/${encodeURIComponent(lobbyCode)}/events`);
+
+        eventSource.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (Array.isArray(data.participants)) {
+                    renderParticipants(data.participants);
+                }
+            } catch (err) {
+                console.error('Не удалось разобрать сообщение SSE:', err);
+            }
+        };
+
+        eventSource.onerror = () => {
+            // EventSource сам переподключится. Если лобби исчезло — сервер вернёт 404,
+            // и браузер будет молча ретраить; при желании здесь можно добавить
+            // отдельную проверку через fetch('/lobby/:code/join') и редирект.
+            console.warn('SSE: соединение с лобби потеряно, попытка переподключения...');
+        };
+
+        // Закрываем поток при уходе со страницы — сервер сразу выкинет нас из списка
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) eventSource.close();
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+
+
 document.addEventListener('DOMContentLoaded', () => {
     const loadMapBtn = document.getElementById('load-map');
     const mapFileInput = document.getElementById('map-file');
@@ -190,7 +270,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (newIndices) {
                     for (let k = 0; k < newIndices.length; k++) {
                         const p = newIndices[k] * 4;
-                        odata[p] = 255; odata[p + 1] = 255; odata[p + 2] = 255; odata[p + 3] = 60;
+                        odata[p] = 255; 
+						odata[p + 1] = 255; 
+						odata[p + 2] = 255; 
+						odata[p + 3] = 30;
                     }
                 }
 

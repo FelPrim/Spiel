@@ -1,14 +1,37 @@
 import { state } from './state.js';
 import { hexToRgba, getVisualRadiusImage, intToRgb } from './utils.js';
 
-export function redrawPoints(overlay) {
-    const ctx = overlay.getContext('2d');
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
+// ============================================================
+//  Кэш слоя Вороного
+// ============================================================
+//  Диаграмма Вороного зависит ТОЛЬКО от координат точек и стилей
+//  (заливка/границы), но НЕ от масштаба и панорамирования.
+//  Поэтому её можно смело кэшировать и пересчитывать лишь когда
+//  изменились точки или стили.
+// ============================================================
+let voronoiCache = null;
+let voronoiCacheKey = '';
+
+function computeCacheKey() {
+    let h = state.points.length | 0;
+    for (let i = 0; i < state.points.length; i++) {
+        const p = state.points[i];
+        h = (h * 31 + Math.round(p.x * 1000)) | 0;
+        h = (h * 31 + Math.round(p.y * 1000)) | 0;
+    }
+    return `${h}|${state.fillColor}|${state.fillAlpha}|${state.strokeColor}|${state.strokeAlpha}|${state.points.length}`;
+}
+
+function buildVoronoiCache(width, height) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
 
     if (state.points.length >= 2) {
         try {
             const delaunay = d3.Delaunay.from(state.points.map(p => [p.x, p.y]));
-            const voronoi = delaunay.voronoi([0, 0, overlay.width, overlay.height]);
+            const voronoi = delaunay.voronoi([0, 0, width, height]);
 
             ctx.fillStyle = hexToRgba(state.fillColor, state.fillAlpha);
             ctx.strokeStyle = hexToRgba(state.strokeColor, state.strokeAlpha);
@@ -24,16 +47,71 @@ export function redrawPoints(overlay) {
             console.warn('Voronoi diagram error:', e);
         }
     }
+    return canvas;
+}
 
+/** Явный сброс кэша (на случай, если хеша недостаточно) */
+export function invalidateVoronoiCache() {
+    voronoiCache = null;
+    voronoiCacheKey = '';
+}
+
+// ============================================================
+//  Планировщик перерисовки: не чаще одного раза за кадр
+// ============================================================
+let redrawScheduled = false;
+let pendingOverlay = null;
+
+export function redrawPoints(overlay) {
+    pendingOverlay = overlay;
+    if (redrawScheduled) return;
+    redrawScheduled = true;
+
+    requestAnimationFrame(() => {
+        redrawScheduled = false;
+        const ov = pendingOverlay;
+        pendingOverlay = null;
+        if (ov && ov.width && ov.height) {
+            renderPointsNow(ov);
+        }
+    });
+}
+
+function renderPointsNow(overlay) {
+    const ctx = overlay.getContext('2d');
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    // ---- 1. Слой Вороного: из кэша ----
+    if (state.points.length >= 2) {
+        const key = computeCacheKey();
+        const needRebuild =
+            !voronoiCache ||
+            voronoiCache.width !== overlay.width ||
+            voronoiCache.height !== overlay.height ||
+            voronoiCacheKey !== key;
+
+        if (needRebuild) {
+            voronoiCache = buildVoronoiCache(overlay.width, overlay.height);
+            voronoiCacheKey = key;
+        }
+        // Быстрый GPU-блит — вместо повторного пересчёта Вороного.
+        ctx.drawImage(voronoiCache, 0, 0);
+    }
+
+    // ---- 2. Слой маркеров точек ----
+    // Всегда перерисовывается, но это O(n) простых arc().
     if (!state.points.length) return;
     const visualRadius = getVisualRadiusImage(state.scale);
+
     for (let i = 0; i < state.points.length; i++) {
         const p = state.points[i];
         ctx.beginPath();
         let radius = visualRadius;
         let fillStyle = 'rgba(255, 50, 50, 0.8)';
 
-        if (i === state.hoveredPointIndex && i !== state.draggedPointIndex && i !== state.followPointIndex) {
+        if (i === state.hoveredPointIndex &&
+            i !== state.draggedPointIndex &&
+            i !== state.followPointIndex) {
             radius = visualRadius * 1.8;
             fillStyle = 'rgba(255, 200, 0, 0.95)';
         } else if (i === state.draggedPointIndex || i === state.followPointIndex) {

@@ -1,5 +1,8 @@
 {
+  "FelPrim": {
+    "passwordHash": "$2b$10$MY8WOW8hw3B3mfTQak7OuOQ8Aqt/TSuCxDzgKvoRRWQ9BqC1pqTMW"
+  },
   "testuser": {
-    "passwordHash": "$2b$10$msJvgK3RFugguqx6Z0e02.XT06dGS9/C96hNPI56anEfnee6n5.jW"
+    "passwordHash": "$2b$10$MeIrG1Boemyz7NqHnGtDkORhGdbSn3MAp8UkBPRds6R8CqlQSIseG"
   }
 }

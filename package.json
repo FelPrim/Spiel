@@ -2,24 +2,12 @@
   "name": "spielfr",
   "version": "1.0.0",
   "description": "FUUUUUUUUUUU",
-  "main": "index.js",
+  "main": "server/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "bun run server/server.js",
+    "start:prod": "NODE_ENV=production bun run server/server.js",
+    "build": "bun build server/server.js --compile --outfile server/server",
+    "build:prod": "NODE_ENV=production bun build server/server.js --compile --outfile server/server"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/FelPrim/Spielfr.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/FelPrim/Spielfr/issues"
-  },
-  "homepage": "https://github.com/FelPrim/Spielfr#readme",
-  "dependencies": {
-    "bcrypt": "^6.0.0",
-    "cookie-session": "^2.1.1",
-    "express": "^5.2.1"
-  }
+  "dependencies": {}
 }

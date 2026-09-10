@@ -3,16 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <title>Лобби</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' font-family='Times New Roman, Times, serif' font-size='100' fill='black' text-anchor='middle' dominant-baseline='central'%3ES%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="lobby.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
-    <div id="controls">
-        <button id="load-map">Загрузить карту</button>
-        <button id="selection-mode">Режим выделения</button>
-    </div>
+    <video src="../climbing.webm" id="bg" autoplay loop muted playsinline preload="auto"></video>
 
+	<div id="sidebar">
+		<div id="controls">
+			<button id="load-map">Загрузить карту</button>
+			<button id="selection-mode">Режим выделения</button>
+		</div>
+
+		<div id="participants-panel">
+			<div id="lobby-code-line">
+				Код лобби: <span id="lobby-code-display">—</span>
+			</div>
+			<div id="participants-count-line">
+				Участники (<span id="participants-count">0</span>)
+			</div>
+			<ul id="participants-list"></ul>
+		</div>
+	</div>
     <a href="../index.html" id="back-to-main">На главную</a>
+
 
     <input type="file" id="map-file" accept=".spielmap" style="display: none;">
 
