@@ -436,6 +436,7 @@ const httpsServer = Bun.serve({
   hostname: HOST,
   tls,
   http3: true,    // включаем HTTP/3 (QUIC) на том же порту
+  http2: true,
   http1: true,    // оставляем HTTP/1.1 для совместимости
   idleTimeout: 0,
   // http2 не поддерживается в Bun.serve (см. PR #30583)
