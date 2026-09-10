@@ -7,16 +7,20 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
+    <div id="controls">
+        <button id="load-map">Загрузить карту</button>
+        <button id="selection-mode">Режим выделения</button>
+    </div>
+
     <a href="../index.html" id="back-to-main">На главную</a>
 
-    <div id="map-container">
-        <button id="load-map">Загрузить карту</button>
-        <input type="file" id="map-file" accept=".spielmap" style="display: none;">
-        <div id="map-display">
-            <!-- Сюда будет добавлено изображение и невидимый canvas -->
-        </div>
-        <div id="map-status"></div>
+    <input type="file" id="map-file" accept=".spielmap" style="display: none;">
+
+    <div id="viewport">
+        <div id="map-display"></div>
     </div>
+
+    <div id="map-status"></div>
 
     <script src="lobby.js"></script>
 </body>
