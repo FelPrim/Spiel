@@ -1,6 +1,6 @@
 // server.js — Bun + HTTP/3
 import { file, write } from "bun";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 
 const isCompiled = (import.meta.dir || "").includes("$bunfs");
@@ -66,7 +66,7 @@ function loadUsers() {
 }
 
 function saveUsers(users) {
-  write(USERS_FILE, JSON.stringify(users, null, 2));
+  writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
 // ======================= Лобби =======================
@@ -103,10 +103,23 @@ function destroyLobby(code) {
 // ======================= Сессии =======================
 
 const SESSION_COOKIE = "session";
-const SESSION_MAX_AGE = 24 * 60 * 60; // секунды
+const SESSION_MAX_AGE = 365 * 24 * 60 * 60; // секунды
 
 // Простое подписание cookie через HMAC (встроено в Bun через crypto)
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-please";
+
+function b64encode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+function b64decode(b64) {
+  const bin = atob(b64);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
 
 async function signSession(data) {
   const json = JSON.stringify(data);
@@ -118,8 +131,10 @@ async function signSession(data) {
     ["sign"]
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(json));
+  // payload — через b64encode (UTF-8-safe для кириллицы)
+  // подпись — через btoa (raw байты, никакого TextEncoder)
   const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
-  return `${btoa(json)}.${sigB64}`;
+  return `${b64encode(json)}.${sigB64}`;
 }
 
 async function verifySession(token) {
@@ -127,7 +142,7 @@ async function verifySession(token) {
   const [payloadB64, sigB64] = token.split(".");
   if (!payloadB64 || !sigB64) return null;
 
-  const json = atob(payloadB64);
+  const json = b64decode(payloadB64);
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(SESSION_SECRET),
@@ -146,16 +161,23 @@ async function verifySession(token) {
   return JSON.parse(json);
 }
 
-function getSession(req) {
+
+async function getSession(req) {
   const cookie = req.headers.get("cookie") || "";
   const match = cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
   if (!match) return null;
   return verifySession(decodeURIComponent(match[1]));
 }
 
+const SECURE_COOKIE = isCompiled || process.env.NODE_ENV === "production";
+
 async function sessionCookie(user, maxAge = SESSION_MAX_AGE) {
+  const secure = SECURE_COOKIE ? "; Secure" : "";
+  if (user === null) {
+    return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+  }
   const token = await signSession(user);
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
 // ======================= HTTP/3 + TLS =======================
@@ -214,18 +236,25 @@ async function handleRequest(req) {
   if (!isApi) {
     // Специальные маршруты для видео
     if (pathname === "/video.webm") {
-      const f = file(join(DATA_DIR, "video.webm"));
-      if (f.size === 0) return new Response("Not Found", { status: 404 });
-      return new Response(f);
-    }
-    if (pathname === "/climbing.webm") {
-      const f = file(join(DATA_DIR, "climbing.webm"));
-      if (f.size === 0) return new Response("Not Found", { status: 404 });
-      return new Response(f);
-    }
+	  const f = file(join(DATA_DIR, "video.webm"));
+	  if (!(await f.exists())) return new Response("Not Found", { status: 404 });
+	  return new Response(f, {
+		headers: { "Cache-Control": "public, max-age=31536000, immutable" },
+	  });
+	}
+	if (pathname === "/climbing.webm") {
+	  const f = file(join(DATA_DIR, "climbing.webm"));
+	  if (!(await f.exists())) return new Response("Not Found", { status: 404 });
+	  return new Response(f, {
+		headers: { "Cache-Control": "public, max-age=31536000, immutable" },
+	  });
+	}
 
     // Статика из client/
-    const filePath = join(CLIENT_DIR, pathname === "/" ? "index.html" : pathname);
+    const filePath = resolve(CLIENT_DIR, pathname === "/" ? "index.html" : "." + pathname);
+	if (!filePath.startsWith(CLIENT_DIR + "/") && filePath !== join(CLIENT_DIR, "index.html")) {
+	  return new Response("Not Found", { status: 404 });
+	}
     const f = file(filePath);
     if (await f.exists()) {
       return new Response(f);
@@ -247,49 +276,57 @@ async function handleRequest(req) {
     if (users[username]) {
       const hash = users[username].passwordHash;
       const match = await Bun.password.verify(password, hash);
-      if (match) {
-        const sessionData = { user: { username } };
-        return json(
-          { success: true, user: { username } },
-          200,
-          { "Set-Cookie": await sessionCookie(sessionData) }
-        );
-      } else {
-        return json({ error: "Неверный пароль" }, 401);
-      }
+      
+	  if (match) {
+		  return json(
+			{ success: true, user: { username } },
+			200,
+			{ "Set-Cookie": await sessionCookie({ user: { username } }) }
+		  );
+		} else {
+		  return json({ error: "Неверный пароль" }, 401);
+		}
+	
+	
     } else {
       const passwordHash = await Bun.password.hash(password, {
         algorithm: "bcrypt",
         cost: 10,
       });
-      users[username] = { passwordHash };
-      saveUsers(users);
-      const sessionData = { user: { username } };
-      return json(
-        { success: true, user: { username } },
-        200,
-        { "Set-Cookie": await sessionCookie(sessionData) }
-      );
+     
+	users[username] = { passwordHash };
+	saveUsers(users);
+	return json(
+	  { success: true, user: { username } },
+	  200,
+	  { "Set-Cookie": await sessionCookie({ user: { username } }) }
+	);
+	  
     }
   }
 
   // ---------- GET /me ----------
-  if (method === "GET" && pathname === "/me") {
-    const session = await requireAuth(req);
-    if (!session) return json({ error: "Не авторизован" }, 401);
-    return json({ user: session.user });
-  }
+if (method === "GET" && pathname === "/me") {
+	const session = await requireAuth(req);
+	if (!session) 
+		return json({ error: "Не авторизован" }, 401);
+	return json(
+		{ user: session.user },
+		200,
+		{ "Set-Cookie": await sessionCookie(session) } // ← refresh
+	);
+}
 
   // ---------- POST /logout ----------
-  if (method === "POST" && pathname === "/logout") {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: "/",
-        "Set-Cookie": await sessionCookie(null, 0),
-      },
-    });
-  }
+	if (method === "POST" && pathname === "/logout") {
+		  return new Response(null, {
+			status: 302,
+			headers: {
+			  Location: "/",
+			  "Set-Cookie": await sessionCookie(null, 0),
+			},
+		  });
+	}
 
   // ---------- POST /lobby ----------
   if (method === "POST" && pathname === "/lobby") {
@@ -439,7 +476,6 @@ const httpsServer = Bun.serve({
   http2: true,
   http1: true,    // оставляем HTTP/1.1 для совместимости
   idleTimeout: 0,
-  // http2 не поддерживается в Bun.serve (см. PR #30583)
   async fetch(req) {
     try {
       return await handleRequest(req);
