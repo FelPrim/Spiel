@@ -1,14 +1,16 @@
-// ================== Подключение к лобби (SSE) ==================
-(function () {
+// ================== Общее ==================
+const LOBBY_CODE =
+    new URLSearchParams(location.search).get('code') ||
+    sessionStorage.getItem('lobbyCode');
+
+document.addEventListener('DOMContentLoaded', () => {
+
+    // ================== Участники (SSE) ==================
     const codeDisplay = document.getElementById('lobby-code-display');
     const countEl = document.getElementById('participants-count');
     const listEl = document.getElementById('participants-list');
 
-    const lobbyCode =
-        new URLSearchParams(location.search).get('code') ||
-        sessionStorage.getItem('lobbyCode');
-
-    if (codeDisplay) codeDisplay.textContent = lobbyCode || '—';
+    if (codeDisplay) codeDisplay.textContent = LOBBY_CODE || '—';
 
     function renderParticipants(names) {
         countEl.textContent = names.length;
@@ -20,65 +22,7 @@
         }
     }
 
-    let eventSource = null;
-
-    async function init() {
-        // 1. Проверяем, что сессия жива
-        try {
-			const r = await fetch('/me');
-			if (!r.ok) { location.href = '../index.html'; return; }
-		} catch (_) { location.href = '../index.html'; return; }
-
-		// 2. Проверяем, что лобби реально существует
-		if (!lobbyCode) { location.href = '../index.html'; return; }
-
-		try {
-			const r = await fetch(`/lobby/${encodeURIComponent(lobbyCode)}/join`, {
-				method: 'POST'
-			});
-			if (!r.ok) {
-				// лобби нет или код неверного формата — назад на главную
-				location.href = '../index.html';
-				return;
-			}
-		} catch (_) { location.href = '../index.html'; return; }
-
-        // 3. Открываем SSE — именно этот момент считаем «входом в лобби»
-        eventSource = new EventSource(`/lobby/${encodeURIComponent(lobbyCode)}/events`);
-
-        eventSource.onmessage = (e) => {
-            try {
-                const data = JSON.parse(e.data);
-                if (Array.isArray(data.participants)) {
-                    renderParticipants(data.participants);
-                }
-            } catch (err) {
-                console.error('Не удалось разобрать сообщение SSE:', err);
-            }
-        };
-
-        eventSource.onerror = () => {
-            // EventSource сам переподключится. Если лобби исчезло — сервер вернёт 404,
-            // и браузер будет молча ретраить; при желании здесь можно добавить
-            // отдельную проверку через fetch('/lobby/:code/join') и редирект.
-            console.warn('SSE: соединение с лобби потеряно, попытка переподключения...');
-        };
-
-        // Закрываем поток при уходе со страницы — сервер сразу выкинет нас из списка
-        window.addEventListener('beforeunload', () => {
-            if (eventSource) eventSource.close();
-        });
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
-})();
-
-
-document.addEventListener('DOMContentLoaded', () => {
+    // ================== Карта: состояние ==================
     const loadMapBtn = document.getElementById('load-map');
     const mapFileInput = document.getElementById('map-file');
     const mapDisplay = document.getElementById('map-display');
@@ -88,7 +32,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let loadedMapData = null;
 
-    // Состояние вида (аналог editor)
     const view = {
         scale: 1,
         translateX: 0,
@@ -137,33 +80,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ===== Кнопки =====
-
-    loadMapBtn.addEventListener('click', () => {
-        mapFileInput.click();
-    });
-
-    selectionModeBtn.addEventListener('click', () => {
-        view.selectionMode = !view.selectionMode;
-        selectionModeBtn.classList.toggle('active', view.selectionMode);
-        updateCursor();
-    });
-
-    // ===== Загрузка архива =====
-
-    mapFileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        if (!file.name.toLowerCase().endsWith('.spielmap')) {
-            mapStatus.textContent = 'Ошибка: файл должен иметь расширение .spielmap';
-            return;
-        }
-
-        mapStatus.textContent = 'Загрузка...';
-
+    // ================== Обработка архива карты ==================
+    // Принимает Blob (локальный File — тоже Blob). Никаких отличий
+    // от прежней локальной загрузки — просто вынесено в функцию.
+    async function applyMapArchive(blob) {
+        mapStatus.textContent = 'Обработка карты...';
         try {
-            const zip = await JSZip.loadAsync(file);
+            const zip = await JSZip.loadAsync(blob);
 
             const mapEntryName = Object.keys(zip.files).find(name => name.startsWith('map.'));
             if (!mapEntryName) throw new Error('В архиве не найден файл карты (map.*)');
@@ -202,7 +125,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 voronojData32[j] = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
             }
 
-            // Кэш индексов пикселей по цвету провинции
             const provinceIndices = new Map();
             {
                 const tmp = new Map();
@@ -270,10 +192,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (newIndices) {
                     for (let k = 0; k < newIndices.length; k++) {
                         const p = newIndices[k] * 4;
-                        odata[p] = 255; 
-						odata[p + 1] = 255; 
-						odata[p + 2] = 255; 
-						odata[p + 3] = 30;
+                        odata[p] = 255;
+                        odata[p + 1] = 255;
+                        odata[p + 2] = 255;
+                        odata[p + 3] = 30;
                     }
                 }
 
@@ -320,14 +242,137 @@ document.addEventListener('DOMContentLoaded', () => {
             mapStatus.textContent = `Карта загружена: ${mapEntryName}`;
         } catch (err) {
             console.error(err);
-            mapStatus.textContent = 'Ошибка загрузки: ' + err.message;
+            mapStatus.textContent = 'Ошибка обработки карты: ' + err.message;
+        }
+    }
+
+    // Скачивание карты из лобби и применение
+    async function downloadAndApplyMap() {
+        mapStatus.textContent = 'Загрузка карты из лобби...';
+        try {
+            const r = await fetch(`/lobby/${encodeURIComponent(LOBBY_CODE)}/map`);
+            if (!r.ok) {
+                mapStatus.textContent = `Не удалось скачать карту: ${r.status}`;
+                return;
+            }
+            const blob = await r.blob();
+            await applyMapArchive(blob);
+        } catch (err) {
+            mapStatus.textContent = 'Ошибка скачивания: ' + err.message;
+        }
+    }
+
+    // ================== Подключение к лобби (SSE) ==================
+    let eventSource = null;
+    let lastMapVersion = -1;
+
+    async function initLobby() {
+        // 1. Проверяем, что сессия жива
+        try {
+            const r = await fetch('/me');
+            if (!r.ok) { location.href = '../index.html'; return; }
+        } catch (_) { location.href = '../index.html'; return; }
+
+        // 2. Проверяем, что лобби реально существует
+        if (!LOBBY_CODE) { location.href = '../index.html'; return; }
+
+        try {
+            const r = await fetch(`/lobby/${encodeURIComponent(LOBBY_CODE)}/join`, {
+                method: 'POST'
+            });
+            if (!r.ok) {
+                location.href = '../index.html';
+                return;
+            }
+        } catch (_) { location.href = '../index.html'; return; }
+
+        // 3. Открываем SSE
+        eventSource = new EventSource(`/lobby/${encodeURIComponent(LOBBY_CODE)}/events`);
+
+        eventSource.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+
+                if (Array.isArray(data.participants)) {
+                    renderParticipants(data.participants);
+                }
+
+                // Реагируем на изменение версии карты.
+                // Первое сообщение с mapVersion=0 просто зафиксирует lastMapVersion,
+                // и скачивания не будет.
+                if (typeof data.mapVersion === 'number'
+                        && data.mapVersion !== lastMapVersion) {
+                    lastMapVersion = data.mapVersion;
+                    if (data.mapVersion > 0) {
+                        downloadAndApplyMap();
+                    }
+                }
+            } catch (err) {
+                console.error('Не удалось разобрать сообщение SSE:', err);
+            }
+        };
+
+        eventSource.onerror = () => {
+            console.warn('SSE: соединение с лобби потеряно, попытка переподключения...');
+        };
+
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) eventSource.close();
+        });
+    }
+
+    initLobby();
+
+    // ================== Кнопки ==================
+    loadMapBtn.addEventListener('click', () => {
+        mapFileInput.click();
+    });
+
+    selectionModeBtn.addEventListener('click', () => {
+        view.selectionMode = !view.selectionMode;
+        selectionModeBtn.classList.toggle('active', view.selectionMode);
+        updateCursor();
+    });
+
+    // ================== Загрузка архива → отправка в лобби ==================
+    mapFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!file.name.toLowerCase().endsWith('.spielmap')) {
+            mapStatus.textContent = 'Ошибка: файл должен иметь расширение .spielmap';
+            mapFileInput.value = '';
+            return;
+        }
+
+        mapStatus.textContent = 'Отправка карты в лобби...';
+        try {
+            const r = await fetch(
+                `/lobby/${encodeURIComponent(LOBBY_CODE)}/map`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: file,
+                }
+            );
+            if (!r.ok) {
+                let msg = `Ошибка ${r.status}`;
+                try {
+                    const j = await r.json();
+                    if (j && j.error) msg = j.error;
+                } catch (_) { /* нет тела */ }
+                mapStatus.textContent = msg;
+            }
+            // При успехе ничего не делаем: сервер разошлёт SSE с новой
+            // mapVersion, и мы (как и все остальные) скачаем и применим карту.
+        } catch (err) {
+            mapStatus.textContent = 'Ошибка сети: ' + err.message;
         } finally {
             mapFileInput.value = '';
         }
     });
 
-    // ===== Панорамирование и клики =====
-
+    // ================== Панорамирование и клики ==================
     viewport.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
         if (!loadedMapData) return;
@@ -380,7 +425,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!view.selectionMode) return;
         if (!loadedMapData) return;
 
-        // Координаты в системе исходного изображения
         const rect = mapDisplay.getBoundingClientRect();
         const x = Math.floor((e.clientX - rect.left) / view.scale);
         const y = Math.floor((e.clientY - rect.top) / view.scale);
@@ -447,15 +491,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const cy = viewport.clientHeight / 2;
 
         switch (e.code) {
-            case 'Equal': // +
+            case 'Equal':
                 e.preventDefault();
                 zoomAt(cx, cy, ZOOM_STEP);
                 break;
-            case 'Minus': // -
+            case 'Minus':
                 e.preventDefault();
                 zoomAt(cx, cy, 1 / ZOOM_STEP);
                 break;
-            case 'Digit0': // 0
+            case 'Digit0':
                 e.preventDefault();
                 fitToScreen();
                 break;

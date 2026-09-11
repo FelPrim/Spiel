@@ -81,7 +81,10 @@ function getLobbyNames(lobby) {
 }
 
 function broadcastLobby(lobby) {
-  const payload = `data: ${JSON.stringify({ participants: getLobbyNames(lobby) })}\n\n`;
+  const payload = `data: ${JSON.stringify({
+    participants: getLobbyNames(lobby),
+    mapVersion: lobby.mapVersion,
+  })}\n\n`;
   for (const conns of lobby.participants.values()) {
     for (const controller of conns) {
       try {
@@ -231,7 +234,7 @@ async function handleRequest(req) {
 	  pathname === "/me" ||
 	  pathname === "/logout" ||
 	  pathname === "/lobby" ||
-	  /^\/lobby\/[A-Za-z0-9]+\/(join|events)$/.test(pathname);
+	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map)$/.test(pathname);
 
   if (!isApi) {
     // Специальные маршруты для видео
@@ -347,10 +350,12 @@ if (method === "GET" && pathname === "/me") {
     }
 
     const lobby = {
-      code,
-      participants: new Map(),
-      reaper: null,
-    };
+	  code,
+	  participants: new Map(),
+	  reaper: null,
+	  mapBuffer: null,   // Uint8Array с содержимым .spielmap
+	  mapVersion: 0,     // 0 = карты нет; увеличивается при каждой загрузке
+	};
 
     lobby.reaper = setTimeout(() => {
       const l = lobbies.get(code);
@@ -377,6 +382,67 @@ if (method === "GET" && pathname === "/me") {
     }
     return json({ success: true, code });
   }
+
+// ---------- POST /lobby/:code/map — загрузка карты ----------
+const mapMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/map$/);
+if (method === "POST" && mapMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = mapMatch[1].toUpperCase();
+  if (!LOBBY_CODE_RE.test(code)) {
+    return json({ error: "Некорректный код лобби" }, 400);
+  }
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const MAX_MAP_BYTES = 20 * 1024 * 1024; // запас: файлы до 10 МБ
+  const declared = Number(req.headers.get("content-length") || 0);
+  if (declared && declared > MAX_MAP_BYTES) {
+    return json({ error: "Файл слишком большой" }, 413);
+  }
+
+  let buf;
+  try {
+    buf = new Uint8Array(await req.arrayBuffer());
+  } catch {
+    return json({ error: "Не удалось прочитать тело запроса" }, 400);
+  }
+  if (buf.byteLength === 0) {
+    return json({ error: "Пустой файл" }, 400);
+  }
+  if (buf.byteLength > MAX_MAP_BYTES) {
+    return json({ error: "Файл слишком большой" }, 413);
+  }
+
+  lobby.mapBuffer = buf;
+  lobby.mapVersion += 1;
+  broadcastLobby(lobby);
+
+  return json({ success: true, version: lobby.mapVersion });
+}
+
+// ---------- GET /lobby/:code/map — скачивание карты ----------
+if (method === "GET" && mapMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = mapMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+  if (!lobby.mapBuffer) {
+    return json({ error: "Карта ещё не загружена" }, 404);
+  }
+
+  return new Response(lobby.mapBuffer, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": String(lobby.mapBuffer.byteLength),
+      "Cache-Control": "no-store",
+      "X-Map-Version": String(lobby.mapVersion),
+    },
+  });
+}
 
   // ---------- GET /lobby/:code/events (SSE) ----------
   const eventsMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/events$/);
