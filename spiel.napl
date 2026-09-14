@@ -1,0 +1,578 @@
+Игра состоит из GameState и Orders. Соответственно, есть процедура, которая принимает GameState и Orders на вход и выдаёт GameState на следующий ход.
+GameState характеризуется:
+	номером хода
+	состоянием сущностей, таких как:
+		провинции;
+		армии;
+		страны
+
+Orders - это массив, элементом которого является Order.
+Order характеризуется:
+	страной, чей это приказ
+	Тип приказа. Типы приказов:
+		1 сколько выделить на инвестиции и в какие провинции: 1 приказ
+		2 сколько оставить в казне: 1 приказ
+		3 сколько подарить денег другим странам: n приказов от 0 до +inf
+		4 сколько и каких юнитов создать в столице: 1 приказ
+		5 задать направление отступления юнитам в провинции: n приказов от 0 до числа провинций
+		6 сколькими и какими юнитами из какой провинции перейти в другую провинцию: n приказов от 0 до +inf
+		7 сколькими и какими юнитами из какой провинции поддержать переход из какой провинции в соседнюю: n приказов от 0 до +inf
+		8 сколькими и какими юнитами из какой провинции поддержать оборону в какой провинции: n приказов от 0 до +inf
+	Информацией приказа
+	
+Логично объединить 1,2,4 приказы т.к. известно что каждый из них это ровно 1 приказ. Также логично вместе рассматривать приказы 6-8.
+
+Подробнее рассмотрим GameState:
+Понятия в GameState: tile, army, country
+Country: {
+	capital: self->Tile;
+	treasury: Number;
+	tiles: self->Array[Tile];
+	armies: self->Array[Army];
+	economy: self->Number;
+}
+Почему я пишу "self->"? Потому что вместо хранения столицы как поля Country мне достаточно просто "уметь" зная страну получить её столицу (т.е. это getter). 
+То, как конкретно устроены эти getter'ы, зависит от процедуры (GameState, Orders) -> GameState.
+Tile: {
+	owner: self->Country;
+	neighbours: self->Array[Tile];
+	economy: Number;
+	army: self->Optional[Army];
+	retreat_province: self->Optional[Tile];
+}
+Army: {
+	infantry: Number;
+	cannons: Number;
+	owner: self->Country;
+	location: self->Tile;
+}
+
+Подробнее рассмаотрим Orders:
+Необходимо понять, в каком порядке Orders применяются к GameState.
+Мне проще рассуждать на примере. Допустим у нас 1 ход игры и игроки создали все возможные приказы. Тогда:
+Приказам 1-3 без разницы когда именно они выполняется - можно выполнять их в любой последовательности
+Приказу 4 важно быть выполненным до боевой системы. Т.к. мы решили объединить приказы 1,2 и 4, то логично что:
+Сначала просчитываются экономические приказы, а затем военные.
+
+Подробнее рассмотрим экономические приказы.
+Для их имплементации проще всего расширить структуры из GameState таким образом, чтобы они могли накапливать информацию.
+Например:
+Приказ 2: сколько оставить в казне
+Логично добавить переменную future_treasury, которая бы обновлялась этим приказом и сбрасывалась в 0 после каждого обновления treasury. Но здесь мы имеем дело с тривиальным случаем: все деньги, что не идут на
+инвестиции, подарки и армию, остаются в казне, поэтому конкретно в этом случае доп переменная не нужна.
+Приказ 1: сколько выделить на инвестиции и в какие провинции
+Логично добавить численную переменную investments в Tile. Дефолтное значение: 0. В этой переменной есть нужда в связи с тем, что разные страны могут инвестировать в одну провинцию - нужно подсчитать сумму инвестиций от всех стран.
+Приказ 3: сколько подарить денег другим странам
+Логично добавить численную переменную gifts в Country. Дефолтное значение 0. В этой переменной есть нужда в связи с тем, что разные страны могут дарить конкретно данной стране.
+Приказ 4: сколько и каких юнитов создать в столице
+Так как этот приказ один на страну и у столицы не может быть несколько "стран с такой сталицей", то, аналогично с приказом 2, в дополнительных переменных нужды нет.
+
+Обновления в GameState:
+Country: {
+	capital: self->Tile;
+	treasury: Number;
+	tiles: self->Array[Tile];
+	armies: self->Array[Army];
+	
+	gifts: Number = 0;
+}
+Tile: {
+	owner: self->Country;
+	neighbours: self->Array[Tile];
+	economy: Number;
+	army: self->Optional[Army];
+	retreat_province: self->Optional[Tile];
+	
+	investments: Number = 0;
+}
+
+Соответственно, приказы 1-4 могут выглядеть так:
+Order1: {
+	owner: self->Country;
+	investments: Number;
+	tiles: self->Array[Tile];
+}
+Order2: не существует, т.к. из приказов 1,3,4 следует то, сколько денег остаётся в казне.
+Order3: {
+	owner: self->Country;
+	recipient: self->Country;
+	gift: Number;
+}
+Order4: {
+	owner: self->Country;
+	infantry: Number;
+	cannons: Number;
+}
+Соответственно, расчёты, связанные с приказами 1-4:
+Обработка приказов 1:
+for (tile in all_tiles)
+	tile.investments = 0;
+for (order1 in order1s){
+	for (tile in order1.tiles)
+		tile.investments += order1.investments;
+	order1.country.treasury -= order1.investments;
+}
+for (tile in all_tiles)
+	tile.economy = tile.economy * ( 2 - 1 / ( 1 + tile.investments / ( number_of_tiles / 2 * tile.economy ) ) );
+	
+Где number_of_tiles - число всех провинций.
+
+Обработка приказов 3:
+for (country in all_countries)
+	country.gifts = 0;
+for (order3 in order3s){
+	order3.recipient.gifts += order3.gift;
+	order3.owner.treasury -= order3.gift;
+}
+
+Обработка приказов 4:
+for (order4 in order4s){
+	order4.owner.capital.army.infantry += order4.infantry;
+	order4.owner.capital.army.cannons += order4.cannons;
+	order4.owner.treasury -= order4.infantry * 1 + order4.cannons * 3; // стоимости за юнит
+}
+
+К сожалению, привести Country.treasury к состоянию на следующий ход сразу мы не можем, т.к. она зависит от контролируемых страной провинций, а они зависят от боевки. 
+Но, после боевки, будет верно следующее:
+Обновление Country.treasury в соответствии с "приказами" 2:
+for (country in all_countries){
+	income = 0;
+	for (tile in country.tiles)
+		income += tile.economy;
+	country.treasury = country.treasury * 0.8 + country.gifts + income;
+}
+
+Отмечу, что win condition в игре завязан на величинах income, поэтому логично добавить его в Country в качестве переменной:
+Country: {
+	capital: self->Tile;
+	treasury: Number;
+	tiles: self->Array[Tile];
+	armies: self->Array[Army];
+	
+	gifts: Number = 0;
+	income: Number;
+}
+Соответственно, проверка на wincondition:
+WorldIncome = 0
+for (country in all_countries)
+	WorldIncome += country.income;
+if (max(country.income for country in all_countries) >= 0.5*WorldIncome)
+	Trigger GameEnd;
+
+Страны ранжируются по значению income на конец игры в таблице победителей и проигравших - первое место у максимума, последнее - у минимума.
+
+6 сколькими и какими юнитами из какой провинции перейти в другую провинцию: n приказов от 0 до +inf
+7 сколькими и какими юнитами из какой провинции поддержать переход из какой провинции в соседнюю: n приказов от 0 до +inf
+8 сколькими и какими юнитами из какой провинции поддержать оборону в какой провинции: n приказов от 0 до +inf
+
+Подробнее рассмотрим военные приказы.
+Приказ 5 (задать направление отступления юнитам в провинции) имплементировать легко:
+Order5: {
+	owner: self->Country;
+	tile: self->Tile;
+	retreat_province: self->Tile;
+}
+Обработка приказов 5:
+for (order5 in order5s)
+	if (order5.owner == order5.tile.owner)
+		order5.tile.retreat_province = order5.retreat_province;
+	
+Приказы 6, 7 и 8 задают боевую систему. Боевка состоит из следующих этапов:
+1) Перемещение
+2) Основной бой
+3) Отступления
+Почему? Основной бой - это бой за провинции, а бой на этапе перемещение происходит тогда, когда 2 армии идут навстречу друг другу.
+Рассмотрим подробнее этап перемещение.
+Рассмотрим бой локально.
+Навстречу друг другу идут армия1 и армия2. 
+Армия1 состоит из infantry1 и cannons1, а также её поддерживают infantry12 и cannons12. 
+Армия2 состоит из infantry2 и cannons2, а также её поддерживают infantry21 и cannons21.
+movement_phase(
+	infantry1, cannons1, infantry12, cannons12,
+	infantry2, cannons2, infantry21, cannons21
+) -> (
+	activeinfantry1, activecannons1, passiveinfantry1, passivecannons1, activeinfantry12, activecannons12,
+	activeinfantry2, activecannons2, passiveinfantry2, passivecannons2, activeinfantry21, activecannons21
+){
+	Damage1 = cannons1 + cannons12
+	Damage2 = cannons2 + cannons21
+	// Фаза обстрела пушек:
+
+	Losses1 = 0;
+	Losses2 = 0;
+	if (infantry2 >= Damage1){
+		// пушки 1 израсходованы
+		infantry2new = infantry2 - Damage1;
+		Losses2 += Damage1;
+		Damage1 = 0;
+	} else {
+		infantry2new = 0;
+		Losses2 += infantry2;
+		Damage1 -= infantry2;
+	}
+	if (infantry21 >= Damage1){
+		// пушки 1 израсходованы
+		infantry21new = infantry21 - Damage1;
+		Losses2 += Damage1;
+		Damage1 = 0;
+	} else {
+		infantry21new = 0;
+		Losses2 += infantry21;
+		Damage1 -= infantry21;
+	}
+	if (cannons2 >= Damage1){
+		// пушки 1 израсходованы
+		cannons2new = cannons2 - Damage1;
+		Losses2 += Damage1;
+		Damage1 = 0;
+	} else {
+		cannons2new = 0;
+		Losses2 += cannons2;
+		Damage1 -= cannons2;
+	}
+	// пушки 21 не уничтожаются
+	if (infantry1 >= Damage2){
+		// пушки 2 израсходованы
+		infantry1new = infantry1 - Damage2;
+		Losses1 += Damage2;
+		Damage2 = 0;
+	} else {
+		infantry1new = 0;
+		Losses1 += infantry1;
+		Damage2 -= infantry1;
+	}
+	if (infantry12 >= Damage2){
+		// пушки 2 израсходованы
+		infantry12new = infantry12 - Damage2;
+		Losses1 += Damage2;
+		Damage2 = 0;
+	} else {
+		infantry12new = 0;
+		Losses1 += infantry12;
+		Damage2 -= infantry12;
+	}
+	if (cannons1 >= Damage2){
+		// пушки 2 израсходованы
+		cannons1new = cannons1 - Damage2;
+		Losses1 += Damage2;
+		Damage2 = 0;
+	} else {
+		cannons1new = 0;
+		Losses1 += cannons1;
+		Damage2 -= cannons1;
+	}
+	// пушки 12 не уничтожаются
+	// На текущий момент сражаются:
+	// (infantry1new, cannons1new) + (infantry12new, cannons12) vs (infantry2new, cannons2new) + (infantry21new, cannons21)
+	usedcannons1 = usedcannons2 = 0;
+
+	if (cannons12 >= Losses2){
+		newcannons12 = cannons12 - Losses2;
+		Losses2 = 0;
+	} else {
+		newcannons12 = 0;
+		Losses2 -= cannons12;
+	}
+	if (cannons1new >= Losses2){
+		usedcannons1 = Losses2;
+		newcannons1 = cannons1new - Losses2;
+	} else {
+		usedcannons1 = cannons1new;
+		newcannons1 = 0;
+	}
+
+	if (cannons21 >= Losses1){
+		newcannons21 = cannons21 - Losses1;
+		Losses1 = 0;
+	} else {
+		newcannons21 = 0;
+		Losses1 -= cannons21;
+	}
+	if (cannons2new >= Losses1){
+		usedcannons2 = Losses1;
+		newcannons2 = cannons2new - Losses1;
+	} else {
+		usedcannons2 = cannons2new;
+		newcannons2 = 0;
+	}
+
+	// На текущий момент сражаются:
+	// (infantry1new, newcannons1) + (infantry12new, newcannons12) vs (infantry2new, newcannons2) + (infantry21new, newcannons21)
+	// пушки, которые отстреляли: usedcannons1, usedcannons2
+
+	Power1 = infantry1new + infantry12new
+	Power2 = infantry2new + infantry21new
+	Фаза столкновения пехоты:
+	if (infantry21new >= Power1){
+		// пехота 1 израсходована
+		newinfantry21 = infantry21new - Power1;
+		Power1 = 0;
+	} else {
+		newinfantry21 = 0;
+		Power1 -= infantry21new;
+	}
+	if (infantry2new >= Power1){
+		// пехота 1 израсходована
+		newinfantry2 = infantry2new - Power1;
+		Power1 = 0;
+	} else {
+		newinfantry2 = 0;
+		Power1 -= infantry2new;
+	}
+	retreat2 = infantry2new - newinfantry2;
+
+	if (infantry12new >= Power2){
+		// пехота 2 израсходована
+		newinfantry12 = infantry12new - Power2;
+		Power2 = 0;
+	} else {
+		newinfantry12 = 0;
+		Power2 -= infantry12new;
+	}
+	if (infantry1new >= Power2){
+		// пехота 2 израсходована
+		newinfantry1 = infantry1new - Power2;
+		Power2 = 0;
+	} else {
+		newinfantry1 = 0;
+		Power2 -= infantry1new;
+	}
+	retreat1 = infantry1new - newinfantry1;
+
+	// На текущий момент сражаются:
+	// (newinfantry1, newcannons1) + (newinfantry12, newcannons12) vs (newinfantry2, newcannons2) + (newinfantry21, newcannons21)
+	// пушки, которые отстреляли: usedcannons1, usedcannons2
+	// пехота, которая отступает: retreat1, retreat2
+	assert(Power1 == 0 || Power2 == 0);
+	// движение может продолжаться даже без пехоты - существуют пушки
+
+	activeinfantry1 = newinfantry1;
+	activeinfantry2 = newinfantry2;
+	// activecannons зависит от победителя
+	passiveinfantry1 = retreat1;
+	passiveinfantry2 = retreat2;
+	// passivecannons зависит от победителя
+	activeinfantry12 = newinfantry12;
+	activeinfantry21 = newinfantry21;
+	activecannons12 = newcannons12;
+	activecannons21 = newcannons21;
+
+	if (newinfantry1 == 0 && newinfantry12 == 0){
+		if (newinfantry2 == 0 && newinfantry21 == 0){
+			// всё решают пушки
+			activecannons1 = newcannons1;
+			activecannons2 = newcannons2;
+			passivecannons1 = usedcannons1;
+			passivecannons2 = usedcannons2;
+		} else {
+			// Победа2
+			activecannons1 = 0; // newcannons1 == 0
+			passivecannons1 = 0;
+			activecannons2 = newcannons2 + usedcannons1;
+			passivecannons2 = usedcannons2;
+		}
+	} else {
+		// Победа1
+		activecannons2 = 0; // newcannons2 == 0
+		passivecannons2 = 0;
+		activecannons1 = newcannons1 + usedcannons2;
+		passivecannons1 = usedcannons1;
+	}
+}
+
+Соответственно, юниты, которые отступают на этапе перемещения, отступают в провинцию откуда они вышли, а те, что не отступают - продолжают движение.
+Для того, чтобы можно было хранить данные между приказами, в Tile логично добавить:
+на каждый соседний тайл по:
+	пехоте, двигающейся из данного тайла в соседний - infantry1,
+	пушкам, двигающимся из данного тайла в соседний - cannons1,
+	пехоте, оказывающей поддержку передвижению из данного тайла в соседний: infantry12,
+	пушкам, оказывающим поддержку передвижения из данного тайла в соседний: cannons12.
+Соответственно, откуда брать исходные данные очевидно: для тайлов A и B рассматриваем значения, соответствующие тайлу B в тайле A и тайлу A в тайле B.
+Стоит учесть что бой происходит только если это разные страны, поэтому необходима проверка на то, что владельцы A и B не совпадают
+Как сохранять получаемые значения? Для active переменных можно использовать те же поля, а passive отступают - значит, что необходимо добавить в каждый тайл переменные,
+которые бы хранила числа пехоты и пушек, отступивших в него в фазе перемещения. Логично назвать её retreatedinfantry и retreatedcannons.
+Также для того, чтобы хранить сколько пехоты и пушек поддерживают оборону в провинции, логично выделить еще переменные supportinfantry и supportcannons
+
+Tile: {
+	owner: self->Country;
+	neighbours: self->Array[Tile];
+	economy: Number;
+	infantry: Number;
+	cannons: Number;
+	retreat_province: self->Optional[Tile];
+	
+	investments: Number = 0;
+	
+	tmpr_owner: self->Country; 
+	moving_units: self->Array[Tuple[Number, Number, Number, Number]];
+	retreatedinfantry: Number = 0;
+	retreatedcannons: Number = 0;
+	supportinfantry: Number = 0;
+	supportcannons: Number = 0;
+}
+при чём length(moving_units) == length(neighbours). 
+tmpr_owner добавлен т.к. боевка может привести к тому, что владелец тайла меняется, а тогда определение того, чьи юниты чьи может сломаться в других боях.
+
+Возможно, в moving_units стоит хранить не тех, кто выходит из тайла, а тех, кто идёт в тайл.
+Отныне считаем, что в moving_units хранятся юниты идущие в тайл, а не из него.
+
+Соответственно, основная фаза (отступления после перемещения уже произошли):
+clear_moving_units(tile) -> () {
+    for (i in range(length(tile.neighbours))) {
+        tile.moving_units[i] = (0, 0, 0, 0);
+    }
+}
+
+main_phase(tile) -> () {
+	// сначала к защитнику подходят подкрепления
+	for (i in range(length(tile.neighbours))){
+		if (tile.neighbours[i].tmpr_owner == tile.owner){
+			tile.retreatedinfantry += tile.moving_units[i][0]; // с точки зрения боевой системы retreatedinfantry - это пехота без бонуса к защите
+			tile.cannons += tile.moving_units[i][1];
+			tile.supportinfantry += tile.moving_units[i][2];
+			tile.supportcannons += tile.moving_units[i][3];
+			tile.moving_units[i][0] = tile.moving_units[i][1] = tile.moving_units[i][2] = tile.moving_units[i][3] = 0;
+		}			
+	}
+	// вместо разделения по соседям нам нужно разделение по сторонам конфликта
+	conquerors_units: Map[Country: Tuple[Number, Number, Number, Number]] = {};
+	for (i in range(length(tile.neighbours))){
+		if (tile.neighbours[i].tmpr_owner != tile.owner && 
+			(tile.moving_units[i][0] != 0 || tile.moving_units[i][1] != 0 || tile.moving_units[i][2] != 0 || tile.moving_units[i][3] != 0)
+		){
+			if (tile.neighbours[i].tmpr_owner not in conquerors_units){
+				conquerors_units[tile.neighbours[i].tmpr_owner] = (tile.moving_units[i][0], tile.moving_units[i][1], tile.moving_units[i][2], tile.moving_units[i][3]);
+			} else {
+				conquerors_units[tile.neighbours[i].tmpr_owner][0] += tile.moving_units[i][0];
+				conquerors_units[tile.neighbours[i].tmpr_owner][1] += tile.moving_units[i][1];
+				conquerors_units[tile.neighbours[i].tmpr_owner][2] += tile.moving_units[i][2];
+				conquerors_units[tile.neighbours[i].tmpr_owner][3] += tile.moving_units[i][3];
+			}
+		}
+	}
+	is_there_defender: Bool = tile.infantry != 0 || tile.cannons != 0 || tile.retreatedinfantry != 0 || tile.supportinfantry != 0 || tile.supportcannons != 0;
+	number_of_parties: Number = length(conquerors_units);
+	if (is_there_defender)
+		number_of_parties += 1;
+	if (number_of_parties < 2){
+		// Боя нет
+		old_owner = tile.tmpr_owner;
+		
+		////////////////////////////////////////
+		// Случай 1: защитник есть, атакующих нет.
+        // Тайл остаётся у текущего владельца.
+        if (is_there_defender) {
+            // Отступившие в фазу перемещения становятся обычным гарнизоном.
+            tile.infantry += tile.retreatedinfantry;
+            tile.cannons += tile.retreatedcannons;
+
+            tile.retreatedinfantry = 0;
+            tile.retreatedcannons = 0;
+			tile.supportinfantry = 0;
+            tile.supportcannons = 0;
+			clear_moving_units(tile);
+		} 
+		// Случай 2: защитника нет, но есть ровно одна страна-захватчик.
+        // Она занимает тайл.
+		else if (length(conquerors_units) == 1) {
+            winner = first_key(conquerors_units);
+            units = conquerors_units[winner];
+			
+			tile.owner = winner;
+			tile.infantry = units[0];
+            tile.cannons = units[1];
+			
+			tile.retreatedinfantry = 0;
+            tile.retreatedcannons = 0;
+            tile.supportinfantry = 0;
+            tile.supportcannons = 0;
+			
+			tile.retreat_province = null;
+			clear_moving_units(tile);
+		} 
+		// Случай 3: нет ни защитника, ни захватчиков.
+        // Тайл остаётся как есть, но временные поля очищаем.
+		else {
+			tile.retreatedinfantry = 0;
+			tile.retreatedcannons = 0;
+			tile.supportinfantry = 0;
+			tile.supportcannons = 0;
+			
+			clear_moving_units(tile);
+		}
+		////////////////////////////////////////
+	} else {
+		// Бой есть
+		A = tile.owner;
+		APerceivedPower = 2*tile.infantry + tile.cannons + tile.retreatedinfantry + tile.supportinfantry + tile.supportcannons;
+		APower =  2*tile.infantry + tile.retreatedinfantry + tile.supportinfantry;
+		ADamage = tile.cannons + tile.supportcannons;
+		
+		B = first_key(conquerors_units);
+		BPerceivedPower = conquerors_units[B][0] + conquerors_units[B][1] + conquerors_units[B][2] + conquerors_units[B][3];
+		BPower = conquerors_units[B][0] + conquerors_units[B][2];
+		BDamage = conquerors_units[B][1] + conquerors_units[B][3];
+		
+		C = second_key(conquerors_units);
+		CPerceivedPower = conquerors_units[C][0] + conquerors_units[C][1] + conquerors_units[C][2] + conquerors_units[C][3];
+		CPower = conquerors_units[C][0] + conquerors_units[C][2];
+		CDamage = conquerors_units[C][1] + conquerors_units[C][3];
+		
+		...
+		
+		Z = last_key(conquerors_units);
+		ZPerceivedPower = conquerors_units[Z][0] + conquerors_units[Z][1] + conquerors_units[Z][2] + conquerors_units[Z][3];
+		ZPower = conquerors_units[Z][0] + conquerors_units[Z][2];
+		ZDamage = conquerors_units[Z][1] + conquerors_units[Z][3];
+		
+		
+		Aden = BPerceivedPower + CPerceivedPower + ... + ZPerceivedPower;
+		Bden = APerceivedPower + CPerceivedPower + DPercievedPower + ... + ZPerceivedPower;
+		...
+		Zden = APerceivedPower + BPerceivedPower + ... + YPercievedPower;
+		
+		AvsBPower = BPerceivedPower/Aden * APower;
+		AvsBDamage = BPerceivedPower/Aden * ADamage;
+		AvsCPower = CPerceivedPower/Aden * APower;
+		AvsCDamage = CPerceivedPower/Aden * ADamage;
+		...
+		AvsZPower = ZPerceivedPower/Aden * APower;
+		AvsZDamage = ZPerceivedPower/Aden * ADamage;
+		
+		BvsAPower = APerceivedPower/Bden * BPower;
+		BvsADamage = APerceivedPower/Bden * BDamage;
+		BvsCPower = CPerceivedPower/Bden * BPower;
+		BvsCDamage = CPerceivedPower/Bden * BDamage;
+		...
+		BvsZPower = ZPerceivedPower/Bden * BPower;
+		BvsZDamage = ZPerceivedPower/Bden * BDamage;
+		
+		...
+		
+		ZvsAPower = APerceivedPower/Zden * ZPower;
+		ZvsADamage = APerceivedPower/Zden * ZDamage;
+		ZvsBPower = BPerceivedPower/Zden * ZPower;
+		ZvsBDamage = BPerceivedPower/Zden * ZDamage;
+		...
+		ZvsYPower = YPercievedPower/Zden * ZPower;
+		ZvsYDamage = YPercievedPower/Zden * ZDamage;
+		
+		PowervsA = BvsAPower + CvsAPower + ... + ZvsAPower;
+		DamagevsA = BvsADamage + CvsADamage + ... + ZvsADamage;
+		PowervsB = AvsBPower + CvsBPower + ... + ZvsBPower;
+		DamagevsB = AvsBDamage + CvsBDamage + ... + ZvsBDamage;
+		...
+		PowervsZ = AvsZPower + BvsZPower + ... + YvsZPower;
+		DamagevsZ = AvsZDamage + BvsZDamage + ... + YvsZDamage;
+		
+		
+	}
+}
+
+movement_phase(
+	infantry1, cannons1, infantry12, cannons12,
+	infantry2, cannons2, infantry21, cannons21
+) -> (
+	activeinfantry1, activecannons1, passiveinfantry1, passivecannons1, activeinfantry12, activecannons12,
+	activeinfantry2, activecannons2, passiveinfantry2, passivecannons2, activeinfantry21, activecannons21
+)
