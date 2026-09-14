@@ -409,9 +409,11 @@ Tile: {
 	retreatedcannons: Number = 0;
 	supportinfantry: Number = 0;
 	supportcannons: Number = 0;
+	retreatinginfantry: Number = 0;
 }
 при чём length(moving_units) == length(neighbours). 
 tmpr_owner добавлен т.к. боевка может привести к тому, что владелец тайла меняется, а тогда определение того, чьи юниты чьи может сломаться в других боях.
+retreatinginfantry добавлен т.к. необходимо где-то хранить то, какие юниты отступают в этот тайл на этапе отступления, а не перемещения.
 
 Возможно, в moving_units стоит хранить не тех, кто выходит из тайла, а тех, кто идёт в тайл.
 Отныне считаем, что в moving_units хранятся юниты идущие в тайл, а не из него.
@@ -421,6 +423,72 @@ clear_moving_units(tile) -> () {
     for (i in range(length(tile.neighbours))) {
         tile.moving_units[i] = (0, 0, 0, 0);
     }
+}
+
+fight1vall(
+	infantry, cannons, supportinfantry, supportcannons,
+	Power, Damage
+) -> (
+	activeinfantry, passiveinfantry, newcannons, newsupportinfantry, newPower
+) {
+	// newPower < 0 <=> победа в бою
+	
+	// Фаза обстрела пушек
+	if (infantry >= Damage){
+		// пушки врага израсходованы
+		infantrynew = infantry - Damage;
+		Damage = 0;
+	} else {
+		infantrynew = 0;
+		Damage -= infantry;
+	}
+	if (supportinfantry >= Damage){
+		// пушки врага израсходованы
+		supportinfantrynew = supportinfantry - Damage;
+		Damage = 0;
+	} else {
+		supportinfantrynew = 0;
+		Damage -= supportinfantry;
+	}
+	if (cannons >= Damage){
+		// пушки врага израсходованы
+		cannonsnew = cannons - Damage;
+		Damage = 0;
+	} else {
+		cannonsnew = 0;
+		Damage -= cannons;
+	}
+	// supportcannons не уничтожаются
+	// На текущий момент сражаются:
+	// (infantrynew, cannonsnew) + (supportinfantrynew, unknown) vs (Power, Damage)
+	// мне не интересен трекинг пушек, которые выстрелили
+	// Фаза столкновения пехоты
+	// мне не интересен трекинг поддерживающей пехоты, которая вынуждена отступить
+	if (supportinfantrynew >= Power){
+		// пехота врага израсходована
+		// newsupportinfantry = supportinfantrynew - Power;
+		Power = 0;
+	} else {
+		Power -= supportinfantrynew;
+	}
+	if (infantrynew >= Power){
+		// пехота врага израсходована
+		newinfantry = infantrynew - Power;
+		retreat = Power;
+		Power = 0;
+	} else {
+		newinfantry = 0;
+		retreat = infantrynew;
+		Power -= infantrynew;
+	}
+	// на текущий момент сражаются:
+	// (newinfantry, cannons) + (???, ???) vs (Power, Damage)
+	
+	activeinfantry = newinfantry;
+	passiveinfantry = retreat;
+	newcannons = cannonsnew;
+	newsupportinfantry = supportinfantrynew;
+	newPower = Power;
 }
 
 main_phase(tile) -> () {
@@ -565,7 +633,7 @@ main_phase(tile) -> () {
 		PowervsZ = AvsZPower + BvsZPower + ... + YvsZPower;
 		DamagevsZ = AvsZDamage + BvsZDamage + ... + YvsZDamage;
 		
-		
+		// TODO
 	}
 }
 
