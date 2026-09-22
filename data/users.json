@@ -1,5 +1,8 @@
 {
   "Иван": {
     "passwordHash": "$2b$10$nwmnLo7mdEeHXbRMjXk70.d1ObZMVUcEftQE2COU/Sv4.q.AEfZ/e"
+  },
+  "testuser": {
+    "passwordHash": "$2b$10$gsS0KLT6m7mfbOO/scDoFOAFeTIzG8VId.w5O3PxNKhMCINm0uR8C"
   }
 }

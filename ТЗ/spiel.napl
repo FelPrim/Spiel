@@ -429,9 +429,8 @@ fight1vall(
 	infantry, cannons, supportinfantry, supportcannons,
 	Power, Damage
 ) -> (
-	activeinfantry, passiveinfantry, newcannons, newsupportinfantry, newPower
+	activeinfantry, passiveinfantry, newcannons, newsupportinfantry
 ) {
-	// newPower < 0 <=> победа в бою
 	
 	// Фаза обстрела пушек
 	if (infantry >= Damage){
@@ -464,6 +463,12 @@ fight1vall(
 	// мне не интересен трекинг пушек, которые выстрелили
 	// Фаза столкновения пехоты
 	// мне не интересен трекинг поддерживающей пехоты, которая вынуждена отступить
+	
+	Power -= cannons + supportcannons;
+	if (Power < 0)
+		Power = 0;
+	
+	
 	if (supportinfantrynew >= Power){
 		// пехота врага израсходована
 		// newsupportinfantry = supportinfantrynew - Power;
@@ -488,7 +493,82 @@ fight1vall(
 	passiveinfantry = retreat;
 	newcannons = cannonsnew;
 	newsupportinfantry = supportinfantrynew;
-	newPower = Power;
+}
+
+
+defend1vall(
+	infantry, cannons, retreatedinfantry, supportinfantry, supportcannons,
+	Power, Damage
+) -> (
+	activeinfantry, passiveinfantry, newcannons, newsupportinfantry
+) {
+	// Фаза обстрела пушек
+	if (infantry >= Damage){
+		// пушки врага израсходованы
+		infantrynew = infantry - Damage;
+		Damage = 0;
+	} else {
+		infantrynew = 0;
+		Damage -= infantry;
+	}
+	if (retreatedinfantry >= Damage){
+		// пушки врага израсходованы
+		retreatedinfantrynew = retreatedinfantry - Damage;
+		Damage = 0;
+	} else {
+		retreatedinfantrynew = 0;
+		Damage -= retreatedinfantry;
+	}
+	if (supportinfantry >= Damage){
+		// пушки врага израсходованы
+		supportinfantrynew = supportinfantry - Damage;
+		Damage = 0;
+	} else {
+		supportinfantrynew = 0;
+		Damage -= supportinfantry;
+	}
+	if (cannons >= Damage){
+		// пушки врага израсходованы
+		cannonsnew = cannons - Damage;
+		Damage = 0;
+	} else {
+		cannonsnew = 0;
+		Damage -= cannons;
+	}
+	
+	Power -= cannons + supportcannons;
+	if (Power < 0)
+		Power = 0;
+		
+	Power -= infantrynew; // бонус к обороне
+	if (Power < 0)
+		Power = 0;
+	
+	infantrynew += retreatedinfantrynew;
+	
+	
+	if (supportinfantrynew >= Power){
+		// пехота врага израсходована
+		// newsupportinfantry = supportinfantrynew - Power;
+		Power = 0;
+	} else {
+		Power -= supportinfantrynew;
+	}
+	if (infantrynew >= Power){
+		// пехота врага израсходована
+		newinfantry = infantrynew - Power;
+		retreat = Power;
+		Power = 0;
+	} else {
+		newinfantry = 0;
+		retreat = infantrynew;
+		Power -= infantrynew;
+	}
+	
+	activeinfantry = newinfantry;
+	passiveinfantry = retreat;
+	newcannons = cannonsnew;
+	newsupportinfantry = supportinfantrynew;
 }
 
 main_phase(tile) -> () {
@@ -633,14 +713,344 @@ main_phase(tile) -> () {
 		PowervsZ = AvsZPower + BvsZPower + ... + YvsZPower;
 		DamagevsZ = AvsZDamage + BvsZDamage + ... + YvsZDamage;
 		
+		(
+			activeinfantry, passiveinfantry, newcannons, newsupportinfantry
+		) = defend1vall(
+			tile.infantry, tile.cannons, tile.retreatedinfantry, tile.supportinfantry, tile.supportcannons,
+			PowervsA, DamagevsA
+		);
+		tile.infantry = activeinfantry;
+		tile.retreatinginfantry = passiveinfantry;
+		tile.cannons = newcannons + tile.retreatedcannons;
+		tile.supportinfantry = newsupportinfantry;
+		
 		// TODO
 	}
 }
 
-movement_phase(
+Проблема с случаем, когда 2 провинции оказывают поддержку, которая затем терпит потери.
+Army: {
+	infantry: Number;
+	cannons: Number;
+	origin: self->Tile;
+	losedinfantry: Number;
+	losedcannons: NUmber;
+	retreat: Number;
+}
+ArmyGroup: {
+	army: Army;
+	support: Array[Army];
+}
+Party: {
+	groups: Array[ArmyGroup];
+}
+Tile: {
+	owner: self->Country;
+	neighbours: self->Array[Tile];
+	economy: Number;
+	retreat_province: self->Optional[Tile];
+
+	investments: Number = 0;
+	tmpr_owner: self->Country; 
+	
+	defenders: ArmyGroup;	
+	retreated: Army;
+	
+	conquerors: self->Array[Party];
+}
+Соответственно в retreated хранятся отступившие/израсходованные на этапе перемещения, а в Army::retreat - отступающие после основной фазы
+movement_phase_scalar(
 	infantry1, cannons1, infantry12, cannons12,
 	infantry2, cannons2, infantry21, cannons21
 ) -> (
 	activeinfantry1, activecannons1, passiveinfantry1, passivecannons1, activeinfantry12, activecannons12,
 	activeinfantry2, activecannons2, passiveinfantry2, passivecannons2, activeinfantry21, activecannons21
-)
+){
+	Damage1 = cannons1 + cannons12
+	Damage2 = cannons2 + cannons21
+	// Фаза обстрела пушек:
+
+	Losses1 = 0;
+	Losses2 = 0;
+	if (infantry2 >= Damage1){
+		// пушки 1 израсходованы
+		infantry2new = infantry2 - Damage1;
+		Losses2 += Damage1;
+		Damage1 = 0;
+	} else {
+		infantry2new = 0;
+		Losses2 += infantry2;
+		Damage1 -= infantry2;
+	}
+	if (infantry21 >= Damage1){
+		// пушки 1 израсходованы
+		infantry21new = infantry21 - Damage1;
+		Losses2 += Damage1;
+		Damage1 = 0;
+	} else {
+		infantry21new = 0;
+		Losses2 += infantry21;
+		Damage1 -= infantry21;
+	}
+	if (cannons2 >= Damage1){
+		// пушки 1 израсходованы
+		cannons2new = cannons2 - Damage1;
+		Losses2 += Damage1;
+		Damage1 = 0;
+	} else {
+		cannons2new = 0;
+		Losses2 += cannons2;
+		Damage1 -= cannons2;
+	}
+	// пушки 21 не уничтожаются
+	if (infantry1 >= Damage2){
+		// пушки 2 израсходованы
+		infantry1new = infantry1 - Damage2;
+		Losses1 += Damage2;
+		Damage2 = 0;
+	} else {
+		infantry1new = 0;
+		Losses1 += infantry1;
+		Damage2 -= infantry1;
+	}
+	if (infantry12 >= Damage2){
+		// пушки 2 израсходованы
+		infantry12new = infantry12 - Damage2;
+		Losses1 += Damage2;
+		Damage2 = 0;
+	} else {
+		infantry12new = 0;
+		Losses1 += infantry12;
+		Damage2 -= infantry12;
+	}
+	if (cannons1 >= Damage2){
+		// пушки 2 израсходованы
+		cannons1new = cannons1 - Damage2;
+		Losses1 += Damage2;
+		Damage2 = 0;
+	} else {
+		cannons1new = 0;
+		Losses1 += cannons1;
+		Damage2 -= cannons1;
+	}
+	// пушки 12 не уничтожаются
+	// На текущий момент сражаются:
+	// (infantry1new, cannons1new) + (infantry12new, cannons12) vs (infantry2new, cannons2new) + (infantry21new, cannons21)
+	usedcannons1 = usedcannons2 = 0;
+
+	if (cannons12 >= Losses2){
+		newcannons12 = cannons12 - Losses2;
+		Losses2 = 0;
+	} else {
+		newcannons12 = 0;
+		Losses2 -= cannons12;
+	}
+	if (cannons1new >= Losses2){
+		usedcannons1 = Losses2;
+		newcannons1 = cannons1new - Losses2;
+	} else {
+		usedcannons1 = cannons1new;
+		newcannons1 = 0;
+	}
+
+	if (cannons21 >= Losses1){
+		newcannons21 = cannons21 - Losses1;
+		Losses1 = 0;
+	} else {
+		newcannons21 = 0;
+		Losses1 -= cannons21;
+	}
+	if (cannons2new >= Losses1){
+		usedcannons2 = Losses1;
+		newcannons2 = cannons2new - Losses1;
+	} else {
+		usedcannons2 = cannons2new;
+		newcannons2 = 0;
+	}
+
+	// На текущий момент сражаются:
+	// (infantry1new, newcannons1) + (infantry12new, newcannons12) vs (infantry2new, newcannons2) + (infantry21new, newcannons21)
+	// пушки, которые отстреляли: usedcannons1, usedcannons2
+
+	Power1 = infantry1new + infantry12new
+	Power2 = infantry2new + infantry21new
+	Фаза столкновения пехоты:
+	if (infantry21new >= Power1){
+		// пехота 1 израсходована
+		newinfantry21 = infantry21new - Power1;
+		Power1 = 0;
+	} else {
+		newinfantry21 = 0;
+		Power1 -= infantry21new;
+	}
+	if (infantry2new >= Power1){
+		// пехота 1 израсходована
+		newinfantry2 = infantry2new - Power1;
+		Power1 = 0;
+	} else {
+		newinfantry2 = 0;
+		Power1 -= infantry2new;
+	}
+	retreat2 = infantry2new - newinfantry2;
+
+	if (infantry12new >= Power2){
+		// пехота 2 израсходована
+		newinfantry12 = infantry12new - Power2;
+		Power2 = 0;
+	} else {
+		newinfantry12 = 0;
+		Power2 -= infantry12new;
+	}
+	if (infantry1new >= Power2){
+		// пехота 2 израсходована
+		newinfantry1 = infantry1new - Power2;
+		Power2 = 0;
+	} else {
+		newinfantry1 = 0;
+		Power2 -= infantry1new;
+	}
+	retreat1 = infantry1new - newinfantry1;
+
+	// На текущий момент сражаются:
+	// (newinfantry1, newcannons1) + (newinfantry12, newcannons12) vs (newinfantry2, newcannons2) + (newinfantry21, newcannons21)
+	// пушки, которые отстреляли: usedcannons1, usedcannons2
+	// пехота, которая отступает: retreat1, retreat2
+	assert(Power1 == 0 || Power2 == 0);
+	// движение может продолжаться даже без пехоты - существуют пушки
+
+	activeinfantry1 = newinfantry1;
+	activeinfantry2 = newinfantry2;
+	// activecannons зависит от победителя
+	passiveinfantry1 = retreat1;
+	passiveinfantry2 = retreat2;
+	// passivecannons зависит от победителя
+	activeinfantry12 = newinfantry12;
+	activeinfantry21 = newinfantry21;
+	activecannons12 = newcannons12;
+	activecannons21 = newcannons21;
+
+	if (newinfantry1 == 0 && newinfantry12 == 0){
+		if (newinfantry2 == 0 && newinfantry21 == 0){
+			// всё решают пушки
+			activecannons1 = newcannons1;
+			activecannons2 = newcannons2;
+			passivecannons1 = usedcannons1;
+			passivecannons2 = usedcannons2;
+		} else {
+			// Победа2
+			activecannons1 = 0; // newcannons1 == 0
+			passivecannons1 = 0;
+			activecannons2 = newcannons2 + usedcannons1;
+			passivecannons2 = usedcannons2;
+		}
+	} else {
+		// Победа1
+		activecannons2 = 0; // newcannons2 == 0
+		passivecannons2 = 0;
+		activecannons1 = newcannons1 + usedcannons2;
+		passivecannons1 = usedcannons1;
+	}
+}
+
+/////////////////////////////////////////////////////////////
+// Уменьшает суммарные infantry/cannons support до (target_infantry, target_cannons),
+// распределяя потери пропорционально текущим количествам.
+// Каждое уменьшение фиксируется в Army.losedinfantry / Army.losedcannons,
+// чтобы после фазы можно было обновить origin-тайлы.
+distribute_support_losses(support: Array[Army], target_infantry, target_cannons):
+
+    // ---------- infantry ----------
+    total_inf = sum(a.infantry for a in support)
+    loss_inf  = total_inf - target_infantry
+    if loss_inf < 0: loss_inf = 0
+
+    if loss_inf > 0 and total_inf > 0:
+        allocs = []
+        for a in support:
+            exact = loss_inf * a.infantry / total_inf
+            base  = floor(exact)
+            allocs.push({ army: a, alloc: base, rem: exact - base })
+
+        left = loss_inf - sum(x.alloc for x in allocs)
+
+        // детерминированный tie-break: rem desc, origin.id asc
+        sort allocs by (x.rem desc, x.army.origin.id asc)
+
+        for i in 0..left-1:
+            allocs[i].alloc += 1
+
+        for x in allocs:
+            x.army.infantry      -= x.alloc
+            x.army.losedinfantry += x.alloc
+
+    // ---------- cannons ----------
+    total_can = sum(a.cannons for a in support)
+    loss_can  = total_can - target_cannons
+    if loss_can < 0: loss_can = 0
+
+    if loss_can > 0 and total_can > 0:
+        allocs = []
+        for a in support:
+            exact = loss_can * a.cannons / total_can
+            base  = floor(exact)
+            allocs.push({ army: a, alloc: base, rem: exact - base })
+
+        left = loss_can - sum(x.alloc for x in allocs)
+
+        sort allocs by (x.rem desc, x.army.origin.id asc)
+
+        for i in 0..left-1:
+            allocs[i].alloc += 1
+
+        for x in allocs:
+            x.army.cannons      -= x.alloc
+            x.army.losedcannons += x.alloc
+
+
+movement_phase(g1: ArmyGroup, g2: ArmyGroup) -> (ArmyGroup, ArmyGroup):
+    // --- 1. Собрать скаляры из ArmyGroup ---
+    infantry1  = g1.army.infantry
+    cannons1   = g1.army.cannons
+    infantry12 = sum(a.infantry for a in g1.support)
+    cannons12  = sum(a.cannons  for a in g1.support)
+
+    infantry2  = g2.army.infantry
+    cannons2   = g2.army.cannons
+    infantry21 = sum(a.infantry for a in g2.support)
+    cannons21  = sum(a.cannons  for a in g2.support)
+
+    // --- 2. Старая арифметика без изменений ---
+    (
+        activeinfantry1, activecannons1, passiveinfantry1, passivecannons1,
+        activeinfantry12, activecannons12,
+        activeinfantry2, activecannons2, passiveinfantry2, passivecannons2,
+        activeinfantry21, activecannons21
+    ) = movement_phase_scalar(
+        infantry1, cannons1, infantry12, cannons12,
+        infantry2, cannons2, infantry21, cannons21
+    )
+
+    // --- 3. Записать обратно в g1 ---
+    g1.army.infantry = activeinfantry1
+    g1.army.cannons  = activecannons1
+    g1.army.retreat  = passiveinfantry1
+    // passivecannons1 — это «отработавшие» пушки g1. Семантику решает вызывающий код.
+
+    distribute_support_losses(g1.support,
+        target_infantry = activeinfantry12,
+        target_cannons  = activecannons12
+    )
+
+    // --- 4. То же для g2 ---
+    g2.army.infantry = activeinfantry2
+    g2.army.cannons  = activecannons2
+    g2.army.retreat  = passiveinfantry2
+
+    distribute_support_losses(g2.support,
+        target_infantry = activeinfantry21,
+        target_cannons  = activecannons21
+    )
+
+    return (g1, g2)
+
+///////////////////////////////////////////////////////////////

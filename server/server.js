@@ -521,7 +521,7 @@ if (method === "GET" && mapMatch) {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
+        //Connection: "keep-alive",
         "X-Accel-Buffering": "no",
       },
     });
