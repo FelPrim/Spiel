@@ -1,0 +1,196 @@
+{
+	"GameState": {
+		"turn": 1,
+		"countriescount": 3,
+		"tilescount": 9,
+		"tiles": [
+			{
+				"id": 0,
+				"ownerid": 0,
+				"neighboursids": [
+					1,
+					3
+				],
+				"economy": 1000.000,
+				"retreat_provinceid": [
+					1,
+					3,
+					null
+				],
+				"defenders": {
+					"infantry": 1000,
+					"cannons": 50
+				}
+			},
+			{
+				"id": 1,
+				"ownerid": 0,
+				"neighboursids": [
+					0,
+					2,
+					4
+				],
+				"economy": 1000.000,
+				"retreat_provinceid": [
+					2,
+					null,
+					null
+				],
+				"defenders": {
+					"infantry": 0,
+					"cannons": 0
+				}
+			},
+			{
+				"id": 2,
+				"ownerid": -1,
+				"neighboursids": [
+					1,
+					5
+				],
+				"economy": 0.000,
+				"retreat_provinceid": [
+					null,
+					null,
+					null
+				],
+				"defenders": {
+					"infantry": 0,
+					"cannons": 0
+				}
+			},
+			{
+				"id": 3,
+				"ownerid": 2,
+				"neighboursids": [
+					0,
+					4,
+					6
+				],
+				"economy": 500.000,
+				"retreat_provinceid": [
+					0,
+					4,
+					6
+				],
+				"defenders": {
+					"infantry":600,
+					"cannons": 0
+				}
+			}, 
+			...
+		],
+		"countries": [
+			{
+				"id": 0,
+				"capitalid": 0,
+				"treasury": 2000.000,
+				"tilesids": [
+					0,
+					1
+				]
+			},
+			{
+				"id": 1,
+				"capitalid": 4,
+				"treasury": 2700.000,
+				"tilesids": [
+					4,
+					5
+				]
+			},
+			{
+				"id": 2,
+				"capitalid": 6,
+				"treasury": 2500,
+				"tilesids": [
+					3,
+					6,
+					7
+				]
+			}
+		],
+		
+	}, 
+	{
+		"orderscount": 40,
+		"Orders": [
+			{
+				"type": 1,
+				"ownerid": 0,
+				"investments": 2000.000,
+				"tilesids": [
+					0,
+					1,
+					2,
+					4,
+					5,
+					8
+				]
+			},
+			...,
+			{
+				"type": 3,
+				"ownerid": 1,
+				"recipientid": 0,
+				"gift": 700.000
+			},
+			{
+				"type": 4,
+				"ownerid": 2,
+				"infantry": 500,
+				"cannons": 500
+			},
+			{
+				"type": 5,
+				"ownerid": 2,
+				"tileid": 0,
+				"retreat_provinceid": 3
+			},
+			{
+				"type": 6,
+				"ownerid": 0,
+				"fromid": 0,
+				"toid": 1,
+				"infantry": 100,
+				"cannons": 0
+			},
+			{
+				"type": 6,
+				"ownerid": 0,
+				"fromid": 0,
+				"toid": 3,
+				"infantry": 900,
+				"cannons": 0
+			},
+			...,
+			{
+				"type": 7,
+				"ownerid": 0,
+				"fromid": 0,
+				"target_fromid": 0,
+				"target_toid": 3,
+				"infantry": 0,
+				"cannons": 50
+			},
+			{
+				"type": 7,
+				"ownerid": 1,
+				"fromid": 4,
+				"target_fromid": 0,
+				"target_toid": 3,
+				"infantry": 100,
+				"cannons": 50
+			}
+			...,
+			{
+				"type": 8,
+				"ownerid": 2,
+				"fromid": 6,
+				"targetid": 3,
+				"infantry": 100,
+				"cannons": 0
+			}
+		]
+	}
+}

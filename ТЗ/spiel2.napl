@@ -33,7 +33,7 @@ Country: {
 	tiles: self->Array[Tile];
 	economy: self->Number;
 	
-	gifts3: Number = 0; // эфемерное поле приказа 3
+	gifts: Number = 0; // эфемерное поле приказа 3
 
 }
 Почему я пишу "self->"? Потому что вместо хранения столицы как поля Country мне достаточно просто "уметь" зная страну получить её столицу (т.е. это getter). 
@@ -55,6 +55,18 @@ ArmyGroup: {
 Party: {
 	country: self->Country;
 	groups: Array[ArmyGroup];
+	PerceivedPower: Number = 0;
+	PerceivedDamage: Number = 0;
+	ReceivedPower: Number = 0;
+	ReceivedDamage: Number = 0;
+	infantry: Number = 0;
+	infantrywithoutbonus: Number = 0;
+	cannons: Number = 0;
+	usedcannons: Number = 0;
+	supportinfantry: Number = 0;
+	supportcannons: Number = 0;
+	is_defender: Bool = False;
+	won_battle: Bool = False;
 }
 
 Tile: {
@@ -70,7 +82,6 @@ Tile: {
 	
 	incoming: self->Array[ArmyGroup]; // эфемерное поле, те, кто идут в тайл
 	arrived: self->Array[ArmyGroup]; // эфемерное поле, результат incoming
-	reinforcements: Army = {}; // эфемерное поле, подкрепления защитника
 }
 
 Подробнее рассмотрим Orders:
@@ -165,7 +176,33 @@ Order5: {
 for (order5 in order5s)
 	order5.tile.retreat_province[order5.owner] = order5.retreat_province;
 
-Приказы 6, 7 и 8 задают боевую систему. Боевка состоит из следующих этапов:
+Приказы 6, 7 и 8 задают боевую систему. 
+Виды приказов 6-8:
+Order6: {
+	owner: self->Country;
+	from: self->Tile;
+	to: self->Tile;
+	infantry: Number;
+	cannons: Number;
+}
+Order7: {
+	owner: self->Country;
+	from: self->Tile;        // тайл, где физически стоит поддержка
+	target_from: self->Tile; // начало поддерживаемого перехода
+	target_to: self->Tile;   // конец поддерживаемого перехода
+	infantry: Number;
+	cannons: Number;
+}
+Order8: {
+	owner: self->Country;
+	from: self->Tile;   // тайл, где физичеки стоит поддержка
+	target: self->Tile; // обороняемый тайл
+	infantry: Number;
+	cannons: Number;
+}
+
+
+Боевка состоит из следующих этапов:
 1) Перемещение
 2) Основной бой
 3) Отступления
@@ -182,189 +219,189 @@ movement_phase_scalar(
 	activeinfantry1, activecannons1, passiveinfantry1, passivecannons1, activeinfantry12, activecannons12,
 	activeinfantry2, activecannons2, passiveinfantry2, passivecannons2, activeinfantry21, activecannons21
 ){
-	Damage1 = cannons1 + cannons12
-	Damage2 = cannons2 + cannons21
+	remaining_damage1 = cannons1 + cannons12
+	remaining_damage2 = cannons2 + cannons21
 	// Фаза обстрела пушек:
 
-	Losses1 = 0;
-	Losses2 = 0;
-	if (infantry2 >= Damage1){
+	total_cannons_fired2 = 0;
+	total_cannons_fired1 = 0;
+	if (infantry2 >= remaining_damage1){
 		// пушки 1 израсходованы
-		infantry2new = infantry2 - Damage1;
-		Losses2 += Damage1;
-		Damage1 = 0;
+		infantry2_after_barrage = infantry2 - remaining_damage1;
+		total_cannons_fired1 += remaining_damage1;
+		remaining_damage1 = 0;
 	} else {
-		infantry2new = 0;
-		Losses2 += infantry2;
-		Damage1 -= infantry2;
+		infantry2_after_barrage = 0;
+		total_cannons_fired1 += infantry2;
+		remaining_damage1 -= infantry2;
 	}
-	if (infantry21 >= Damage1){
+	if (infantry21 >= remaining_damage1){
 		// пушки 1 израсходованы
-		infantry21new = infantry21 - Damage1;
-		Losses2 += Damage1;
-		Damage1 = 0;
+		infantry21_after_barrage = infantry21 - remaining_damage1;
+		total_cannons_fired1 += remaining_damage1;
+		remaining_damage1 = 0;
 	} else {
-		infantry21new = 0;
-		Losses2 += infantry21;
-		Damage1 -= infantry21;
+		infantry21_after_barrage = 0;
+		total_cannons_fired1 += infantry21;
+		remaining_damage1 -= infantry21;
 	}
-	if (cannons2 >= Damage1){
+	if (cannons2 >= remaining_damage1){
 		// пушки 1 израсходованы
-		cannons2new = cannons2 - Damage1;
-		Losses2 += Damage1;
-		Damage1 = 0;
+		cannons2_after_barrage = cannons2 - remaining_damage1;
+		total_cannons_fired1 += remaining_damage1;
+		remaining_damage1 = 0;
 	} else {
-		cannons2new = 0;
-		Losses2 += cannons2;
-		Damage1 -= cannons2;
+		cannons2_after_barrage = 0;
+		total_cannons_fired1 += cannons2;
+		remaining_damage1 -= cannons2;
 	}
 	// пушки 21 не уничтожаются
-	if (infantry1 >= Damage2){
+	if (infantry1 >= remaining_damage2){
 		// пушки 2 израсходованы
-		infantry1new = infantry1 - Damage2;
-		Losses1 += Damage2;
-		Damage2 = 0;
+		infantry1_after_barrage = infantry1 - remaining_damage2;
+		total_cannons_fired2 += remaining_damage2;
+		remaining_damage2 = 0;
 	} else {
-		infantry1new = 0;
-		Losses1 += infantry1;
-		Damage2 -= infantry1;
+		infantry1_after_barrage = 0;
+		total_cannons_fired2 += infantry1;
+		remaining_damage2 -= infantry1;
 	}
-	if (infantry12 >= Damage2){
+	if (infantry12 >= remaining_damage2){
 		// пушки 2 израсходованы
-		infantry12new = infantry12 - Damage2;
-		Losses1 += Damage2;
-		Damage2 = 0;
+		infantry12_after_barrage = infantry12 - remaining_damage2;
+		total_cannons_fired2 += remaining_damage2;
+		remaining_damage2 = 0;
 	} else {
-		infantry12new = 0;
-		Losses1 += infantry12;
-		Damage2 -= infantry12;
+		infantry12_after_barrage = 0;
+		total_cannons_fired2 += infantry12;
+		remaining_damage2 -= infantry12;
 	}
-	if (cannons1 >= Damage2){
+	if (cannons1 >= remaining_damage2){
 		// пушки 2 израсходованы
-		cannons1new = cannons1 - Damage2;
-		Losses1 += Damage2;
-		Damage2 = 0;
+		cannons1_after_barrage = cannons1 - remaining_damage2;
+		total_cannons_fired2 += remaining_damage2;
+		remaining_damage2 = 0;
 	} else {
-		cannons1new = 0;
-		Losses1 += cannons1;
-		Damage2 -= cannons1;
+		cannons1_after_barrage = 0;
+		total_cannons_fired2 += cannons1;
+		remaining_damage2 -= cannons1;
 	}
 	// пушки 12 не уничтожаются
 	// На текущий момент сражаются:
-	// (infantry1new, cannons1new) + (infantry12new, cannons12) vs (infantry2new, cannons2new) + (infantry21new, cannons21)
-	usedcannons1 = usedcannons2 = 0;
+	// (infantry1_after_barrage, cannons1_after_barrage) + (infantry12_after_barrage, cannons12) vs (infantry2_after_barrage, cannons2_after_barrage) + (infantry21_after_barrage, cannons21)
+	main_cannons_fired1 = main_cannons_fired2 = 0;
 
-	if (cannons12 >= Losses2){
-		newcannons12 = cannons12 - Losses2;
-		Losses2 = 0;
+	if (cannons12 >= total_cannons_fired1){
+		support_cannons_left1 = cannons12 - total_cannons_fired1;
+		total_cannons_fired1 = 0;
 	} else {
-		newcannons12 = 0;
-		Losses2 -= cannons12;
+		support_cannons_left1 = 0;
+		total_cannons_fired1 -= cannons12;
 	}
-	if (cannons1new >= Losses2){
-		usedcannons1 = Losses2;
-		newcannons1 = cannons1new - Losses2;
+	if (cannons1_after_barrage >= total_cannons_fired1){
+		main_cannons_fired1 = total_cannons_fired1;
+		main_cannons_left1 = cannons1_after_barrage - total_cannons_fired1;
 	} else {
-		usedcannons1 = cannons1new;
-		newcannons1 = 0;
+		main_cannons_fired1 = cannons1_after_barrage;
+		main_cannons_left1 = 0;
 	}
 
-	if (cannons21 >= Losses1){
-		newcannons21 = cannons21 - Losses1;
-		Losses1 = 0;
+	if (cannons21 >= total_cannons_fired2){
+		support_cannons_left2 = cannons21 - total_cannons_fired2;
+		total_cannons_fired2 = 0;
 	} else {
-		newcannons21 = 0;
-		Losses1 -= cannons21;
+		support_cannons_left2 = 0;
+		total_cannons_fired2 -= cannons21;
 	}
-	if (cannons2new >= Losses1){
-		usedcannons2 = Losses1;
-		newcannons2 = cannons2new - Losses1;
+	if (cannons2_after_barrage >= total_cannons_fired2){
+		main_cannons_fired2 = total_cannons_fired2;
+		main_cannons_left2 = cannons2_after_barrage - total_cannons_fired2;
 	} else {
-		usedcannons2 = cannons2new;
-		newcannons2 = 0;
+		main_cannons_fired2 = cannons2_after_barrage;
+		main_cannons_left2 = 0;
 	}
 
 	// На текущий момент сражаются:
-	// (infantry1new, newcannons1) + (infantry12new, newcannons12) vs (infantry2new, newcannons2) + (infantry21new, newcannons21)
-	// пушки, которые отстреляли: usedcannons1, usedcannons2
+	// (infantry1_after_barrage, main_cannons_left1) + (infantry12_after_barrage, support_cannons_left1) vs (infantry2_after_barrage, main_cannons_left2) + (infantry21_after_barrage, support_cannons_left2)
+	// пушки, которые отстреляли: main_cannons_fired1, main_cannons_fired2
 
-	Power1 = infantry1new + infantry12new
-	Power2 = infantry2new + infantry21new
+	Power1 = infantry1_after_barrage + infantry12_after_barrage
+	Power2 = infantry2_after_barrage + infantry21_after_barrage
 	Фаза столкновения пехоты:
-	if (infantry21new >= Power1){
+	if (infantry21_after_barrage >= Power1){
 		// пехота 1 израсходована
-		newinfantry21 = infantry21new - Power1;
+		support_infantry2_after_clash = infantry21_after_barrage - Power1;
 		Power1 = 0;
 	} else {
-		newinfantry21 = 0;
-		Power1 -= infantry21new;
+		support_infantry2_after_clash = 0;
+		Power1 -= infantry21_after_barrage;
 	}
-	if (infantry2new >= Power1){
+	if (infantry2_after_barrage >= Power1){
 		// пехота 1 израсходована
-		newinfantry2 = infantry2new - Power1;
+		infantry2_after_clash = infantry2_after_barrage - Power1;
 		Power1 = 0;
 	} else {
-		newinfantry2 = 0;
-		Power1 -= infantry2new;
+		infantry2_after_clash = 0;
+		Power1 -= infantry2_after_barrage;
 	}
-	retreat2 = infantry2new - newinfantry2;
+	retreating_infantry2 = infantry2_after_barrage - infantry2_after_clash;
 
-	if (infantry12new >= Power2){
+	if (infantry12_after_barrage >= Power2){
 		// пехота 2 израсходована
-		newinfantry12 = infantry12new - Power2;
+		support_infantry1_after_clash = infantry12_after_barrage - Power2;
 		Power2 = 0;
 	} else {
-		newinfantry12 = 0;
-		Power2 -= infantry12new;
+		support_infantry1_after_clash = 0;
+		Power2 -= infantry12_after_barrage;
 	}
-	if (infantry1new >= Power2){
+	if (infantry1_after_barrage >= Power2){
 		// пехота 2 израсходована
-		newinfantry1 = infantry1new - Power2;
+		infantry1_after_clash = infantry1_after_barrage - Power2;
 		Power2 = 0;
 	} else {
-		newinfantry1 = 0;
-		Power2 -= infantry1new;
+		infantry1_after_clash = 0;
+		Power2 -= infantry1_after_barrage;
 	}
-	retreat1 = infantry1new - newinfantry1;
+	retreating_infantry1 = infantry1_after_barrage - infantry1_after_clash;
 
 	// На текущий момент сражаются:
-	// (newinfantry1, newcannons1) + (newinfantry12, newcannons12) vs (newinfantry2, newcannons2) + (newinfantry21, newcannons21)
-	// пушки, которые отстреляли: usedcannons1, usedcannons2
-	// пехота, которая отступает: retreat1, retreat2
+	// (infantry1_after_clash, main_cannons_left1) + (support_infantry1_after_clash, support_cannons_left1) vs (infantry2_after_clash, main_cannons_left2) + (support_infantry2_after_clash, support_cannons_left2)
+	// пушки, которые отстреляли: main_cannons_fired1, main_cannons_fired2
+	// пехота, которая отступает: retreating_infantry1, retreating_infantry2
 	assert(Power1 == 0 || Power2 == 0);
 	// движение может продолжаться даже без пехоты - существуют пушки
 
-	activeinfantry1 = newinfantry1;
-	activeinfantry2 = newinfantry2;
+	activeinfantry1 = infantry1_after_clash;
+	activeinfantry2 = infantry2_after_clash;
 	// activecannons зависит от победителя
-	passiveinfantry1 = retreat1;
-	passiveinfantry2 = retreat2;
+	passiveinfantry1 = retreating_infantry1;
+	passiveinfantry2 = retreating_infantry2;
 	// passivecannons зависит от победителя
-	activeinfantry12 = newinfantry12;
-	activeinfantry21 = newinfantry21;
-	activecannons12 = newcannons12;
-	activecannons21 = newcannons21;
+	activeinfantry12 = support_infantry1_after_clash;
+	activeinfantry21 = support_infantry2_after_clash;
+	activecannons12 = support_cannons_left1;
+	activecannons21 = support_cannons_left2;
 
-	if (newinfantry1 == 0 && newinfantry12 == 0){
-		if (newinfantry2 == 0 && newinfantry21 == 0){
+	if (infantry1_after_clash == 0 && support_infantry1_after_clash == 0){
+		if (infantry2_after_clash == 0 && support_infantry2_after_clash == 0){
 			// всё решают пушки
-			activecannons1 = newcannons1;
-			activecannons2 = newcannons2;
-			passivecannons1 = usedcannons1;
-			passivecannons2 = usedcannons2;
+			activecannons1 = main_cannons_left1;
+			activecannons2 = main_cannons_left2;
+			passivecannons1 = main_cannons_fired1;
+			passivecannons2 = main_cannons_fired2;
 		} else {
 			// Победа2
-			activecannons1 = 0; // newcannons1 == 0
+			activecannons1 = 0; // main_cannons_left1 == 0
 			passivecannons1 = 0;
-			activecannons2 = newcannons2 + usedcannons1;
-			passivecannons2 = usedcannons2;
+			activecannons2 = main_cannons_left2 + main_cannons_fired1;
+			passivecannons2 = main_cannons_fired2;
 		}
 	} else {
 		// Победа1
-		activecannons2 = 0; // newcannons2 == 0
+		activecannons2 = 0; // main_cannons_left2 == 0
 		passivecannons2 = 0;
-		activecannons1 = newcannons1 + usedcannons2;
-		passivecannons1 = usedcannons1;
+		activecannons1 = main_cannons_left1 + main_cannons_fired2;
+		passivecannons1 = main_cannons_fired1;
 	}
 }
 Соответственно, единственное усложнение боевки на этапе перемещение, которое осталось добавить - это определить то, как распределяются потери у 
@@ -372,121 +409,885 @@ movement_phase_scalar(
 но расчёт на то, что пехота будет исчисляться тысячами и ошибка на 1 пехоту за бой будет незначительной.
 
 
+# Фаза перемещения (бои за рёбра)
 
+## Термины
 
+- **Тайл** — вершина графа. **Переход** между двумя соседними тайлами — ребро.
+- **`incoming`** — список групп, которые претендуют на вход в тайл. Группа может иметь 0 основных юнитов, если она создана только ради поддержки.
+- **`arrived`** — результат фазы перемещения: группы, которые реально дошли до тайла назначения.
+- **Support-запись** (`ArmyGroup.support[i]`) — запись о поддержке перехода, а не физическое перемещение. Юниты поддержки физически остаются в своём тайле:
+  - support-пехота лежит в `defenders.army.infantrywithoutbonus`;
+  - support-пушки лежат в `defenders.army.usedcannons`.
+- **Support-пехота** может поддерживать **только один** переход. Разные приказы 7 должны выделять непересекающиеся части.
+- **Support-пушки** могут поддерживать переход, даже если основные юниты не движутся.
+- **Сторона** в `movement_phase_scalar` — это четвёрка чисел: `infantry`, `cannons`, `supportinfantry`, `supportcannons`. Сторона нулевая тогда и только тогда, когда все четыре числа равны 0.
+- **Владелец тайла на этапе перемещения** берётся как `ownerprevmove`. На этапе перемещения владелец меняться не может.
 
+Общая идея: тайлы — вершины графа, переходы между ними — рёбра. Фаза перемещения разрешает только встречные бои на рёбрах: когда из двух соседних тайлов с разными `ownerprevmove` идут навстречу друг другу группы. Бои за сами тайлы (вершины) — это уже основной бой.
 
-**Фаза перемещения (бои за рёбра)**
+---
 
-Общая идея: тайлы — вершины графа, переходы между ними — рёбра. Фаза перемещения разрешает только встречные бои на рёбрах: когда из двух соседних тайлов с разными владельцами идут навстречу друг другу группы. Бои за сами тайлы (вершины) — это уже основной бой.
+## Шаг 1. Раскладка приказов
 
-**Шаг 1. Раскладка приказов.**
 Приказы 6 «разрезают» `Tile.defenders.army` каждого тайла. Выделенные части уходят в `Tile.incoming` соседних тайлов. Оставшиеся в тайле части остаются `defenders.army`.
 
-**Шаг 2. Support-армии.**
-Приказы 7 переводят выделенные части в своём тайле из `defenders.army.infantry` и `defenders.army.cannons` в `defenders.army.infantrywithoutbonus` и `defenders.army.usedcannons`. Эти же части упоминаются в `ArmyGroupsupport[i].infantry` и `ArmyGroup.support[i].cannons` той группы, которой они поддерживают. Support-армия на перемещении поддерживает ровно один переход — по типу приказа.
+Если сумма выделенных юнитов из одного тайла по всем приказам 6 превышает `defenders.army`, это ошибка — и при валидации `Orders`, и при выполнении.
 
-**Шаг 3. Детект встречного боя.**
+---
+
+## Шаг 2. Support-армии
+
+Приказ 7 выделяет часть гарнизона тайла для поддержки перехода. Выделенная пехота учитывается в `defenders.army.infantrywithoutbonus`, выделенные пушки — в `defenders.army.usedcannons`. Эти же единицы регистрируются в `ArmyGroup.support[i]` соответствующего перехода.
+
+- Support-пехота может поддерживать только один переход. Разные приказы 7 должны выделять непересекающиеся части.
+- Support-пушки могут поддерживать переход, даже если основная армия не движется.
+- Support-запись может существовать и при 0 основных юнитов: для определения стороны поддержки достаточно знать, из какого тайла переход «шёл бы», а это определяется `ownerprevmove` тайла-источника.
+
+**Жизненный цикл support-юнитов.**
+
+Support-пехота всегда физически остаётся в `infantrywithoutbonus` своего тайла — кроме случая, когда она полностью уничтожена пушками противника. Её участие в поддержке описывается отдельной записью `support[i].infantry`, которая может уменьшаться независимо от `infantrywithoutbonus`: пехота может «отступить из поддержки», будучи отброшенной пехотой противника, и при этом остаться в `infantrywithoutbonus`. Это может произойти даже на победившей стороне — часть пехоты отбрасывается, часть удерживает позицию.
+
+| Состояние | Support-пехота | Support-пушки |
+|---|---|---|
+| До боя | в `infantrywithoutbonus`, в `support[i].infantry` | в `usedcannons`, в `support[i].cannons` |
+| Выстрелила | — | удаляется из `support[i].cannons`, **остаётся** в `usedcannons` |
+| Не выстрелила | — | остаётся в обоих |
+| Убита пушками противника | вычитается из `infantrywithoutbonus` и из `support[i].infantry`, пишется в `losedinfantry` | — |
+| Отброшена пехотой противника (отступила из поддержки) | удаляется из `support[i].infantry`, **остаётся** в `infantrywithoutbonus` | — |
+| Не участвовала в столкновении | остаётся в обоих | — |
+
+Support-пушки в основном бою своего тайла учитываются как passive/used.
+
+---
+
+## Шаг 3. Детект встречного боя
+
 Для каждой пары соседних тайлов A и B проверяется:
+
 - в `A.incoming` есть группа, идущая в B;
 - в `B.incoming` есть группа, идущая в A;
-- владельцы тайлов разные.
+- `A.ownerprevmove` ≠ `B.ownerprevmove`.
 
-Если владельцы одинаковые — боя нет: группа из A идёт в `B.reinforcements`, группа из B идёт в `A.reinforcements`.
+Если `ownerprevmove` одинаковые — боя нет: группа из A идёт в `B.arrived`, группа из B идёт в `A.arrived`.
+
 Если встречного движения нет вовсе — боя нет: группа идёт в `Tile.arrived`.
-Если владельцы разные и обе группы есть — вызывается `movement_phase_scalar` для этой пары.
 
-**Шаг 4. `movement_phase_scalar`.**
+Если `ownerprevmove` разные и обе группы есть — вызывается `movement_phase_scalar` для этой пары.
+
+Группа с 0 юнитов (все четыре числа равны 0) не создаётся или удаляется. При этом `incoming` может существовать с нулевой основной армией, если к переходу привязана support-запись.
+
+---
+
+## Шаг 4. `movement_phase_scalar`
+
+Перед вызовом movement_phase_scalar для ребра (A,B) строится SideA и SideB. В SideA входят все основные юниты всех групп A→B и все support-юниты, привязанные к переходу A→B. Аналогично SideB
+
 Внутри — фаза обстрела пушек (сначала основная пехота, потом support-пехота, потом основные пушки; support-пушки не уничтожаются), затем фаза столкновения пехоты, затем определение активных/пассивных и захвата.
 
-Захват определяется внутри `movement_phase_scalar` по расчётному наличию пехоты у победителя **до** пропорционального распределения потерь support-пехоты. Если по расчёту у стороны должна остаться хотя бы одна пехота, а у противника пехоты не остаётся, сторона считается победителем и захватывает пушки. Последующее округление вверх при распределении потерь support-пехоты может обнулить пехоту победителя, но это не отменяет уже определённый захват.
+**Порядок расчёта:**
 
-Распределение потерь support-пехоты — пропорционально начальному количеству пехоты в поддержке, с округлением вверх; превышение суммарных потерь над предсказанными — нормально. Support-пушки, отстрелявшись, исчезают из `ArmyGroup.support[i].cannons`; в `defenders.army.usedcannons` своего тайла они не попадают. Support-пехота, понеся потери, пишет их в `losedinfantry` своей армии.
+1. Суммарный урон пушек стороны 1 (`damage1`) и стороны 2 (`damage2`).
+2. Урон убивает цели в таком порядке: основная пехота противника → support-пехота противника → основные пушки противника. Support-пушки **не уничтожаются**.
+3. Support-пушки, которые отстрелялись, удаляются из `support[i].cannons`, но остаются в `usedcannons` своего тайла.
+4. Основные пушки, которые отстрелялись, становятся passive (`fired_main_cannons1`, `fired_main_cannons2`).
+5. Фаза столкновения пехоты: суммарная мощь стороны 1 (`power1`) и стороны 2 (`power2`) расходуется на пехоту противника в порядке: support-пехота противника → основная пехота противника.
+6. Определение активных/пассивных и захвата.
 
-**Шаг 5. Применение результата.**
-Победившая сторона:
-- активные и пассивные пушки продолжают движение в тайл назначения и попадают в `Tile.arrived`;
-- захваченные пушки противника становятся активными и остаются в той же армии победителя;
-- захват уже определён на шаге 4 и не отменяется распределением потерь support-пехоты; движение продолжается даже одними пушками.
+**Захват:**
 
-Проигравшая сторона:
-- отступившая пехота возвращается в исходный тайл и добавляется в `Tile.defenders.army.infantrywithoutbonus`;
-- отступившие пушки возвращаются в исходный тайл как `Tile.defenders.army.usedcannons`;
-- пассивные пушки проигравшего захватываются победителем (в той же армии победителя);
+- Захват определяется внутри `movement_phase_scalar` по расчётному наличию пехоты у победителя **до** пропорционального распределения потерь support-пехоты.
+- Если по расчёту у стороны должна остаться хотя бы одна пехота, а у противника пехоты не остаётся — сторона считается победителем и захватывает **основные** пушки противника.
+- Захваченные пушки становятся активными и остаются в той же армии победителя.
+- Последующее округление вверх при распределении потерь support-пехоты может обнулить пехоту победителя, но это не отменяет уже определённый захват.
+- Если у обеих сторон 0 пехоты, захвата нет.
+
+**Распределение потерь support-пехоты:**
+
+- Пропорционально начальному количеству пехоты в поддержке, с округлением вверх.
+- Превышение суммарных потерь над расчётными — нормально.
+- Support-пехота, убитая пушками противника, вычитается из `infantrywithoutbonus` и из `support[i].infantry`, пишется в `losedinfantry`.
+- Support-пехота, отброшенная пехотой противника, удаляется из `support[i].infantry`, но **остаётся** в `infantrywithoutbonus` своего тайла.
+
+**Имена переменных:**
+
+- `damage1`, `damage2` — суммарный урон пушек каждой стороны.
+- `losses_inflicted_on_side2`, `losses_inflicted_on_side1` — сколько юнитов уничтожено каждой стороной.
+- `fired_main_cannons1`, `fired_main_cannons2` — основные пушки, которые отстрелялись и стали passive.
+- `support_cannons_fired1`, `support_cannons_fired2` — support-пушки, которые отстрелялись.
+
+Деление на «победившую» и «проигравшую» сторону в `movement_phase_scalar` относится только к **основной** армии и к захвату основных пушек. Для support-пехоты результат боя не определяет её судьбу: она может частично отступить из поддержки, частично остаться в поддержке, частично быть убитой — независимо от того, кто победил.
+
+---
+
+## Шаг 5. Применение результата
+
+**Победившая сторона:**
+
+- активные и пассивные основные пушки продолжают движение в тайл назначения и попадают в `Tile.arrived`;
+- захваченные основные пушки противника становятся активными и остаются в той же армии победителя;
+- захват уже определён на шаге 4 и не отменяется распределением потерь support-пехоты; движение продолжается даже одними пушками;
+- support-записи переносятся в `arrived` как часть группы;
+- support-пехота, отброшенная в столкновении, удаляется из `support[i].infantry`, но остаётся в `infantrywithoutbonus` своего тайла;
+- support-пехота, убитая пушками, выбывает из обоих мест;
+- support-пушки, которые стреляли, остаются в `usedcannons` своего тайла и удаляются из `support[i].cannons`.
+
+**Проигравшая сторона:**
+
+- отступившая основная пехота возвращается в исходный тайл и добавляется в `Tile.defenders.army.infantrywithoutbonus`;
+- отступившие основные пушки возвращаются в исходный тайл как `Tile.defenders.army.usedcannons`;
+- пассивные основные пушки проигравшего захватываются победителем (в той же армии победителя);
+- support-пушки не захватываются, так как физически не перемещаются;
+- support-пехота, отброшенная в столкновении, удаляется из `support[i].infantry`, но остаётся в `infantrywithoutbonus`;
+- support-пехота, убитая пушками, выбывает из обоих мест;
 - `incoming` для этой пары зануляется.
 
 Отступившая пехота позже обязана участвовать в основном бое или отступлении уже как `infantrywithoutbonus`.
 
-**Шаг 6. Случай «обе стороны без пехоты».**
-Если у обеих сторон не осталось пехоты, симметричная запись кода обрабатывает сразу два случая: у одной из сторон пушки равны 0, и вторая просто проходит сквозь первую.
+---
+
+## Шаг 6. Случай «обе стороны без пехоты»
+
+Если у обеих сторон 0 пехоты, захват не происходит.
+
+- Если у одной стороны 0 основных пушек и 0 пехоты, она исчезает.
+- Если у обеих сторон есть основные пушки, они обмениваются уроном по общим правилам. При равенстве пушек обе стороны аннигилируются.
+- Support-пушки не участвуют в этом обмене как цели; они только добавляют урон. Если они не стреляют (нет цели), support-запись просто переносится в `arrived`.
+- Если после обмена у стороны не осталось ни пехоты, ни основных пушек, но есть support-пушки, группа переходит в `arrived` с этими support-записями.
+- Если у одной стороны пушек больше, она уничтожает пушки противника и проходит; при равенстве обе стороны аннигилируются, никто не проходит.
 
 ---
 
-**Примеры**
+## Примеры
 
-1. Support-пушка отстрелялась и исчезает.
-Из A в B идёт 1 пехота.
-Поддержка из C: 1 пушка.
+### 1. Support-пушка отстрелялась и исчезает из support
+
+Из A в B идёт 1 пехота.  
+Поддержка из C: 1 пушка.  
 Из B в A идёт 1 пехота.
-Пушка из C даёт `Damage = 1`, убивает пехоту B.
-После боя support-пушка из C исчезает из `ArmyGroup::support`.
-В `defenders::usedcannons` тайла C она не попадает.
 
-2. Округление вверх у support-пехоты.
-Переход A → B поддерживают две армии: C и D, по 1 пехоте каждая.
-Всего support-пехоты: 2.
-По расчёту сторона A должна потерять 1 support-пехотинца.
+Пушка из C даёт `damage = 1`, убивает пехоту B.  
+После боя support-пушка из C удаляется из `ArmyGroup.support[i].cannons`, но **остаётся** в `defenders.army.usedcannons` тайла C.
+
+### 2. Округление вверх у support-пехоты
+
+Переход A → B поддерживают две армии: C и D, по 1 пехоте каждая.  
+Всего support-пехоты: 2.  
+По расчёту сторона A должна потерять 1 support-пехотинца.  
 Пропорционально с округлением вверх:
+
 - C теряет 1;
 - D теряет 1.
-Итого теряется 2 пехотинца вместо 1.
+
+Итого теряется 2 пехотинца вместо 1.  
 Это нормально и не пересчитывает исход боя.
 
-3. Одностороннее движение.
-A → B есть.
-B → A нет.
-Встречного боя нет.
+### 3. Одностороннее движение
+
+A → B есть.  
+B → A нет.  
+Встречного боя нет.  
 Все войска из A → B переходят в `Tile.arrived`.
 
-4. Одинаковый владелец.
-A → B есть.
-B → A есть.
-Владелец у A и B один.
-Боя нет.
-Группа из A идёт в `B.reinforcements`, группа из B идёт в `A.reinforcements`.
+### 4. Одинаковый владелец
 
-5. Сложный пример.
+A → B есть.  
+B → A есть.  
+`ownerprevmove` у A и B один.  
+Боя нет.  
+Группа из A идёт в `B.arrived`, группа из B идёт в `A.arrived`.
+
+### 5. Сложный пример
+
 Есть тайлы A, B, C, D.
 
 Из A в B идут:
+
 - 1 пехота;
 - 1 пушка.
 
 Переход A → B поддерживают:
+
 - из C: 1 пехота;
 - из D: 1 пехота и 1 пушка.
 
 Из B в A идут:
+
 - 2 пехоты;
 - 2 пушки.
 
 Поддержки у B нет.
 
-Ход расчёта:
+**Ход расчёта:**
 
-1. Пушки стороны A дают `Damage = 1 + 1 = 2`.
-2. Пушки стороны B дают `Damage = 2`.
+1. Пушки стороны A дают `damage1 = 1 + 1 = 2`.
+2. Пушки стороны B дают `damage2 = 2`.
 3. Пушки A убивают всю пехоту B: 2 пехоты.
 4. Пушки B убивают 1 основную пехоту A и 1 пехоту поддержки.
 5. По расчёту у A остаётся 1 пехота поддержки, у B пехоты нет.
-6. Значит, победитель — A. A захватывает 2 пушки B.
-7. Support-пушка из D выстрелила, поэтому она исчезает из поддержки.
-8. Support-пехота: всего было 2 (C и D). Потеряна 1. Пропорционально с округлением вверх C теряет 1, D теряет 1. Итого теряется 2 пехоты, хотя расчётная потеря была 1. Это допустимая погрешность округления.
-9. После распределения потерь у A не остаётся пехоты: основная пехота убита, support-пехота C и D потеряна.
+6. Значит, победитель — A. A захватывает 2 основные пушки B.
+7. Support-пушка из D выстрелила, поэтому она удаляется из `ArmyGroup.support[i].cannons`, но остаётся в `defenders.army.usedcannons` тайла D.
+8. Support-пехота: всего было 2 (C и D). Потеряна 1. Пропорционально с округлением вверх C теряет 1, D теряет 1. Итого теряется 2 пехотинца, хотя расчётная потеря была 1. Это допустимая погрешность округления.
+9. Потери support-пехоты в этом примере возникли от пушек B, значит, это именно убитые пехотинцы: они выбывают из `infantrywithoutbonus` тайлов C и D и записываются в `losedinfantry`.
+10. После распределения потерь у A не остаётся пехоты: основная пехота убита, support-пехота C и D потеряна.
 
-Результат:
+**Результат:**
 
 - В B продолжают движение 2 активные пушки и 1 пассивная пушка.
-- Support-пушка D исчезла, потому что отстрелялась.
+- Support-пушка D удалена из support, но остаётся в `usedcannons` тайла D.
 - В поддержке не остаётся ни пехоты, ни пушек.
 - Захват всё равно состоялся, потому что он был определён до распределения потерь support-пехоты.
+
+### 6. Обе стороны без пехоты, только support-пушки
+
+Из A в B нет основных юнитов, но есть поддержка из C: 1 пушка.  
+Из B в A нет основных юнитов, но есть поддержка из D: 2 пушки.
+
+Пехоты нет ни у одной стороны — захвата нет.  
+Основных пушек нет ни у одной стороны — обмен уроном не происходит.  
+Support-пушки не стреляют, так как нет цели.  
+Обе support-записи просто переносятся в `arrived` соответствующих тайлов.
+
+### 7. Отступление support-пехоты при победе стороны
+
+Из A в B идут 2 пехоты.  
+Переход A → B поддерживает из C: 3 пехоты.  
+Из B в A идут 4 пехоты.
+
+Пехотного столкновения хватает, чтобы отбросить часть support-пехоты C, но сторона A всё равно побеждает.  
+Отброшенная часть support-пехоты C удаляется из `support[i].infantry`, но остаётся в `infantrywithoutbonus` тайла C.  
+Основная армия A побеждает и продолжает движение в `arrived`, несмотря на частичное отступление support-пехоты.
+
+
+# Фаза основного боя (бои за вершины)
+
+Основной бой - это схватка за контроль тайла. Соответственно, в этой схватке могут принимать участие 
+Tile.defenders и часть Tile.arrived как защитники и другая часть Tile.arrived как атакующие.
+Защитники отличаются от атакующих только тем, что пехота обороняющихся, которая была в тайле до начала боя, обладает бонусом.
+
+Сначала к защитнику подходят подкрепления примерно по такой логике:
+for (i in range(length(tile.neighbours))){
+	if (tile.neighbours[i].ownerprevmove == tile.ownerprevmove){
+		tile.defenders.infantrywithoutbonus += tile.arrived[i].army.infantry;
+		assert(tile.arrived[i].army.infantrywithoutbonus == 0);
+		tile.defenders.cannons += tile.arrived[i].army.cannons;
+		tile.defenders.usedcannons += tile.arrived[i].army.usedcannons;
+		
+		for (j in range(length(tile.neighbours))){
+			tile.defenders.support[j].infantry += tile.arrived[i].support[j].infantry;
+			assert(tile.arrived[i].support[j].infantrywithoutbonus == 0);
+			tile.defenders.support[j].cannons += tile.arrived[i].support[j].cannons;
+			assert(tile.arrived[i].support[j].usedcannons == 0);
+		}
+	}			
+}
+
+Затем все стороны агрегируются в массив Party (т.к. может быть ситуация, когда тайл атакуется юнитами одной страны из 2х разных тайлов)
+party = tile.parties[CountryToIndex[tile.ownerprevmove]];
+party.country = tile.ownerprevmove;
+party.is_defender = True;
+army = tile.defenders.army;
+party.infantry += army.infantry;
+party.infantrywithoutbonus += army.infantrywithoutbonus;
+party.cannons += army.cannons;
+party.usedcannons += army.usedcannons;
+for (j in range(length(tile.neighbours))){
+	party.supportinfantry += tile.defenders.support[j].infantry;
+	party.supportcannons += tile.defenders.support[j].cannons;
+}
+for (i in range(length(tile.neighbours))){
+	party = tile.parties[CountryToIndex[tile.neighbours[i].ownerprevmove]];
+	party.country = tile.neighbours[i].ownerprevmove;
+	army = tile.arrived[i].army;
+	party.infantry += army.infantry;
+	assert(army.infantrywithoutbonus == 0);
+	party.cannons += army.cannons;
+	party.usedcannons += army.usedcannons;
+	
+	for (j in range(length(tile.neighbours))){
+		army = tile.arrived[i].support[j];
+		party.supportinfantry += army.infantry;
+		assert(army.infantrywithoutbonus == 0);
+		party.supportcannons += army.cannons;
+		assert(army.usedcannons == 0);
+	}
+}
+Затем для каждой Party подсчитывается её Power и её Damage (с учётом того, что для защитника defenders.infantry обладают удвоенным значением Power).
+Затем для каждой Party подсчитывается PercievedPower = Power + Damage.
+Затем для каждой Party подсчитывается распределение её Power и Damage по оппонентам пропорционально их PercievedPower.
+Этому соответсвует примерно такой псевдокод:
+A = tile.parties[CountryToIndex[tile.ownerprevmove]];
+APower =  2*A.infantry + A.infantrywithoutbonus + A.supportinfantry;
+ADamage = A.cannons + A.supportcannons;
+
+APerceivedPower = APower + ADamage;
+
+i = 0;
+if (tile.parties[i].is_defender)
+	++i;
+B = tile.parties[i];
+BPower = B.infantry + B.supportinfantry;
+BDamage = B.cannons + B.supportcannons;
+BPerceivedPower = BPower + BDamage;
+
+if (tile.parties[i].is_defender)
+	++i;
+C = tile.parties[i];
+CPower = C.infantry + C.supportinfantry);
+CDamage = C.cannons + C.supportcannons);
+CPerceivedPower = CPower + CDamage;
+
+...
+
+if (tile.parties[i].is_defender)
+	++i;
+Z = tile.parties[i];
+ZPower = Z.infantry + Z.supportinfantry);
+ZDamage = Z.cannons + Z.supportcannons);
+ZPerceivedPower = ZPower + ZDamage;
+
+
+Aden = BPerceivedPower + CPerceivedPower + ... + ZPerceivedPower;
+Bden = APerceivedPower + CPerceivedPower + DPercievedPower + ... + ZPerceivedPower;
+...
+Zden = APerceivedPower + BPerceivedPower + ... + YPercievedPower;
+
+AvsBPower = BPerceivedPower/Aden * APower;
+AvsBDamage = BPerceivedPower/Aden * ADamage;
+AvsCPower = CPerceivedPower/Aden * APower;
+AvsCDamage = CPerceivedPower/Aden * ADamage;
+...
+AvsZPower = ZPerceivedPower/Aden * APower;
+AvsZDamage = ZPerceivedPower/Aden * ADamage;
+
+BvsAPower = APerceivedPower/Bden * BPower;
+BvsADamage = APerceivedPower/Bden * BDamage;
+BvsCPower = CPerceivedPower/Bden * BPower;
+BvsCDamage = CPerceivedPower/Bden * BDamage;
+...
+BvsZPower = ZPerceivedPower/Bden * BPower;
+BvsZDamage = ZPerceivedPower/Bden * BDamage;
+
+...
+
+ZvsAPower = APerceivedPower/Zden * ZPower;
+ZvsADamage = APerceivedPower/Zden * ZDamage;
+ZvsBPower = BPerceivedPower/Zden * ZPower;
+ZvsBDamage = BPerceivedPower/Zden * ZDamage;
+...
+ZvsYPower = YPercievedPower/Zden * ZPower;
+ZvsYDamage = YPercievedPower/Zden * ZDamage;
+
+PowervsA = BvsAPower + CvsAPower + ... + ZvsAPower;
+DamagevsA = BvsADamage + CvsADamage + ... + ZvsADamage;
+PowervsB = AvsBPower + CvsBPower + ... + ZvsBPower;
+DamagevsB = AvsBDamage + CvsBDamage + ... + ZvsBDamage;
+...
+PowervsZ = AvsZPower + BvsZPower + ... + YvsZPower;
+DamagevsZ = AvsZDamage + BvsZDamage + ... + YvsZDamage;
+
+В результате получаются PowervsA, DamagevsA, ..., PowervsZ, DamagevsZ - и бой всех против всех можно представить как бой каждого из участников с абстрактными Power и Damage.
+То, как этот бой выглядит, зависит от того, участник боя является защитником или нет. Для защитника используется defend1vall, а для атакующего: attack1vall.
+attack1vall(
+	infantry, cannons, supportinfantry, supportcannons,
+	Power, Damage
+) -> (
+	activeinfantry, passiveinfantry, newcannons, activesupportinfantry, passivesupportinfantry
+) {
+	
+	// Фаза обстрела пушек
+	if (infantry >= Damage){
+		// пушки врага израсходованы
+		infantrynew = infantry - Damage;
+		Damage = 0;
+	} else {
+		infantrynew = 0;
+		Damage -= infantry;
+	}
+	if (supportinfantry >= Damage){
+		// пушки врага израсходованы
+		supportinfantrynew = supportinfantry - Damage;
+		Damage = 0;
+	} else {
+		supportinfantrynew = 0;
+		Damage -= supportinfantry;
+	}
+	if (cannons >= Damage){
+		// пушки врага израсходованы
+		cannonsnew = cannons - Damage;
+		Damage = 0;
+	} else {
+		cannonsnew = 0;
+		Damage -= cannons;
+	}
+	// supportcannons не уничтожаются
+	// На текущий момент сражаются:
+	// (infantrynew, cannonsnew) + (supportinfantrynew, unknown) vs (Power, Damage)
+	// мне не интересен трекинг пушек, которые выстрелили
+	// Фаза столкновения пехоты
+	// мне не интересен трекинг поддерживающей пехоты, которая вынуждена отступить
+	
+	Power -= cannons + supportcannons;
+	if (Power < 0)
+		Power = 0;
+	
+	
+	if (supportinfantrynew >= Power){
+		// пехота врага израсходована
+		activesupportinfantry = supportinfantrynew - Power;
+		passivesupportinfantry = Power;
+		Power = 0;
+	} else {
+		activesupportinfantry = 0;
+		passivesupportinfantry = supportinfantrynew;
+		Power -= supportinfantrynew;
+	}
+	if (infantrynew >= Power){
+		// пехота врага израсходована
+		newinfantry = infantrynew - Power;
+		retreat = Power;
+		Power = 0;
+	} else {
+		newinfantry = 0;
+		retreat = infantrynew;
+		Power -= infantrynew;
+	}
+	// на текущий момент сражаются:
+	// (newinfantry, cannons) + (activesupportinfantry, ???) vs (Power, Damage)
+	
+	activeinfantry = newinfantry;
+	passiveinfantry = retreat;
+	newcannons = cannonsnew;
+}
+
+
+defend1vall(
+	infantry, cannons, infantrywithoutbonus, supportinfantry, supportcannons,
+	Power, Damage
+) -> (
+	activeinfantry, passiveinfantry, newcannons, activesupportinfantry, passivesupportinfantry
+) {
+	// Фаза обстрела пушек
+	if (infantry >= Damage){
+		// пушки врага израсходованы
+		infantrynew = infantry - Damage;
+		Damage = 0;
+	} else {
+		infantrynew = 0;
+		Damage -= infantry;
+	}
+	if (infantrywithoutbonus >= Damage){
+		// пушки врага израсходованы
+		infantrywithoutbonusnew = infantrywithoutbonus - Damage;
+		Damage = 0;
+	} else {
+		infantrywithoutbonusnew = 0;
+		Damage -= infantrywithoutbonus;
+	}
+	if (supportinfantry >= Damage){
+		// пушки врага израсходованы
+		supportinfantrynew = supportinfantry - Damage;
+		Damage = 0;
+	} else {
+		supportinfantrynew = 0;
+		Damage -= supportinfantry;
+	}
+	if (cannons >= Damage){
+		// пушки врага израсходованы
+		cannonsnew = cannons - Damage;
+		Damage = 0;
+	} else {
+		cannonsnew = 0;
+		Damage -= cannons;
+	}
+	
+	Power -= cannons + supportcannons;
+	if (Power < 0)
+		Power = 0;
+		
+	Power -= infantrynew; // бонус к обороне
+	if (Power < 0)
+		Power = 0;
+	
+	infantrynew += infantrywithoutbonusnew;
+	
+	
+	if (supportinfantrynew >= Power){
+		// пехота врага израсходована
+		activesupportinfantry = supportinfantrynew - Power;
+		passivesupportinfantry = Power;
+		Power = 0;
+	} else {
+		activesupportinfantry = 0;
+		passivesupportinfantry = supportinfantrynew;
+		Power -= supportinfantrynew;
+	}
+	if (infantrynew >= Power){
+		// пехота врага израсходована
+		newinfantry = infantrynew - Power;
+		retreat = Power;
+		Power = 0;
+	} else {
+		newinfantry = 0;
+		retreat = infantrynew;
+		Power -= infantrynew;
+	}
+	
+	activeinfantry = newinfantry;
+	passiveinfantry = retreat;
+	newcannons = cannonsnew;
+}
+
+После боев всех против всех проверяется, сколько участников победило по пехоте. Для победы необходимо, чтобы у участника была пехота, которая не отступила.
+Если победитель 1 - он захватывает тайл и все пушки в нём. Если победителей несколько - наступает ничья и все отступают, сохраняя свои пушки. Если победителей 0, то идёт проверка того, что одна из сторон аннигилировала все остальные своими пушками - если выжила только 1 сторона, то она становится победителем и захватывает тайл.
+Пехота, которая не уничтожена пушками и вынуждена отступить, отступает в retreat_province, соответствующий своей стране.
+
+# Основной бой: точная спецификация
+
+## 1. Общие понятия
+
+Основной бой — схватка за контроль тайла. Участвуют:
+
+- `Tile.defenders` — защитники;
+- `Tile.arrived` — атакующие, пришедшие из соседних тайлов.
+
+`Tile.reinforcements` не существует — это устаревшее поле. Используется только `arrived`, и для защитников, и для атакующих.
+
+Defender bonus к `Power` получает только исходная `defenders.army.infantry`. `infantrywithoutbonus`, `supportinfantry` и прибывшие подкрепления бонуса не получают.
+
+Support-юнит может одновременно участвовать в своём основном бою и поддерживать другой тайл, но:
+
+- support-пехота в своём основном бою не получает defender bonus и учитывается как `infantrywithoutbonus`;
+- support-пушка в своём основном бою не стреляет и учитывается как `usedcannons`.
+
+## 2. Support и `Order8`
+
+`Order8` заполняет `Tile.defenders.support[j]` так же, как `Order7` заполняет `Tile.incoming.support[...]`.
+
+- `j` — сосед-источник поддержки, т.е. тайл `from`.
+- Support-записи переносятся из `incoming` в `arrived` так же, как основная армия.
+- Один и тот же support-юнит не может быть выделен дважды в приказах 6/7/8.
+- Support-пехота может поддерживать только один переход.
+- Support-пушки могут поддерживать переход, даже если основная армия не движется.
+- Support третьей страны входит в party поддерживаемого, но физически остаётся в своём тайле.
+- Сторона, на которой сражается поддержка, равна владельцу `from`. Поддерживать можно переход между двумя чужими тайлами; страна поддержки при этом сражается на стороне владельца `from`.
+
+Жизненный цикл support-юнитов:
+
+| Состояние | Support-пехота | Support-пушки |
+|---|---|---|
+| До боя | в `infantrywithoutbonus`, в `support[i].infantry` | в `usedcannons`, в `support[i].cannons` |
+| Выстрелила | — | удаляется из `support[i].cannons`, **остаётся** в `usedcannons` |
+| Не выстрелила | — | остаётся в обоих |
+| Убита пушками противника | вычитается из `infantrywithoutbonus` и из `support[i].infantry`, пишется в `losedinfantry` | — |
+| Отброшена пехотой противника | удаляется из `support[i].infantry`, **остаётся** в `infantrywithoutbonus` | — |
+| Не участвовала в столкновении | остаётся в обоих | — |
+
+После основного боя support-записи не переносятся как поддержка, но потери support-пехоты от пушек учитываются в `infantrywithoutbonus` и `losedinfantry`.
+
+## 3. Формирование `Party`
+
+- Defender party создаётся всегда, даже если войск нет: тривиальная `(0,0,0,0)`.
+- Если `tile.ownerprevmove == null`, defender party тривиальна, а её страна — заранее оговорённый индекс `-1`, не принадлежащий ни одной стране.
+- Атакующие с одинаковым `ownerprevmove` агрегируются в одну party.
+- Несколько групп одной страны из разных `arrived` сливаются в одну party.
+- Support третьих стран суммируется в party поддерживаемого.
+- Если у стороны есть только support и нет основных юнитов, поведение не меняется.
+- Если в тайле нет защитника, атакующие дерутся друг с другом.
+
+Порядок слияния подкреплений:
+
+```
+for (i in range(length(tile.neighbours))){
+    if (tile.neighbours[i].ownerprevmove == tile.ownerprevmove){
+        tile.defenders.infantrywithoutbonus += tile.arrived[i].army.infantry;
+        tile.defenders.cannons += tile.arrived[i].army.cannons;
+        tile.defenders.usedcannons += tile.arrived[i].army.usedcannons;
+        for (j in range(length(tile.neighbours))){
+            tile.defenders.support[j].infantry += tile.arrived[i].support[j].infantry;
+            tile.defenders.support[j].cannons += tile.arrived[i].support[j].cannons;
+        }
+    }
+}
+```
+
+Если тайл не был атакован, но есть `arrived` союзников — все юниты становятся активными и агрегируются в `Tile.defenders.army`, support убирается.
+
+Если `ownerprevmove` одинаков у всех — боя нет, support не сливается.
+
+## 4. `Power`, `Damage`, `PerceivedPower`
+
+Для каждой party:
+
+- `Power = 2*infantry + infantrywithoutbonus + supportinfantry` (для защитника); для атакующего — `Power = infantry + supportinfantry`.
+- `Damage = cannons + supportcannons`.
+- `PerceivedPower = Power + Damage`.
+
+`usedcannons` не входят в `Damage`, потому что уже отстрелялись. Захваченные в фазе перемещения пушки лежат в `cannons` и могут стрелять в основном бою.
+
+Распределение `Power` и `Damage` по оппонентам пропорционально их `PerceivedPower` — **без округления**.
+
+`PowervsA` / `DamagevsA` — агрегированная атака против A.
+
+## 5. `attack1vall` и `defend1vall`
+
+Пушки стреляют до infantry clash, одновременно. Пушки, убитые вражеским `Damage`, всё равно стреляют.
+
+Порядок получения урона от `Damage`:
+
+- `attack1vall`: infantry → supportinfantry → cannons;
+- `defend1vall`: infantry (с бонусом) → infantrywithoutbonus → supportinfantry → cannons.
+
+`supportcannons` не уничтожаются в фазу `Damage`.
+
+Порядок расхода `Power`:
+
+- в обоих сначала supportinfantry, затем infantry;
+- в `defend1vall` перед этим `Power` уменьшается на `cannons + supportcannons` и на `infantrynew` (бонус к обороне), а `infantrynew` затем увеличивается на `infantrywithoutbonusnew`.
+
+Вычитание `cannons + supportcannons` из `Power` — намеренная модель: пушка даёт и урон через `Damage`, и suppression через уменьшение `Power`. Это не двойной учёт, а два разных эффекта.
+
+Функции возвращают `activesupportinfantry` и `passivesupportinfantry`:
+
+- `activesupportinfantry` — support-пехота, которая удержалась и продолжает считаться в поддержке;
+- `passivesupportinfantry` — support-пехота, отброшенная пехотой, физически остаётся в `infantrywithoutbonus` своего тайла.
+
+## 6. Определение победителя
+
+- Победа: `activeinfantry > 0` **или** `activesupportinfantry > 0`.
+- Если остались только пушки — сторона считается выжившей.
+- `supportcannons` не дают победы.
+- Если несколько сторон имеют активную пехоту — ничья.
+- Если 0 победителей:
+  - если ровно одна сторона имеет основные `cannons`/`usedcannons` — она победитель;
+  - если несколько — все отступают;
+  - если все аннигилировали — `owner` не меняется.
+
+## 7. Захват
+
+- `owner` меняется на страну победителя сразу.
+- `ownerprevmove`, `capital`, `economy` не меняются.
+- Захватываются все `cannons` и `usedcannons` физически в тайле боя у всех сторон.
+- Support-пушки и support-пехота из соседних тайлов не захватываются.
+- Если победитель — атакующий, support-юниты защитника из соседних тайлов игнорируются.
+- Если победитель один, но групп несколько — создаётся новая армия, агрегирующая все `party.groups.army[i]` в `Tile.defenders.army`. Захваченные пушки идут туда же.
+- Все пушки после боя становятся active: `usedcannons → cannons`.
+
+## 8. Отступление
+
+- Отступают только `infantry` и `cannons`. Support-юниты не отступают; их физические версии в `infantrywithoutbonus`/`usedcannons` могут отступать.
+- В обычном случае отступает только пехота, пушки захватываются. В ничье отступают все.
+- `retreat_province` берётся из тайла боя.
+- Если `retreat_province` не задан — войска уничтожаются.
+- Отступать можно только в соседний тайл. В тот же тайл нельзя. Во вражеский можно, но если там есть хотя бы 1 вражеский юнит — отступающие уничтожаются.
+- Обработка отступления — после всех боёв. Перехват невозможен.
+- После отступления: `infantry → infantry`, `cannons → cannons`.
+- Если несколько групп отступают в один тайл: выживают, только если страна уже имела юниты в этом тайле после основного боя; иначе уничтожаются.
+- Если несколько стран отступают в один пустой вражеский тайл — все уничтожаются.
+- `owner` меняется сразу, если отступившие занимают пустой вражеский тайл.
+
+## 9. Постобработка
+
+- После основной фазы наступает фаза отступления.
+- После отступления сбрасываются эфемерные поля: `incoming`, `arrived`, `investments`, `gifts`, `losedinfantry`, `losedcannons`, `infantrywithoutbonus`, `usedcannons`, `support`, `PerceivedPower` и т.д.
+- Перевод `infantrywithoutbonus → infantry`, `usedcannons → cannons`.
+- `Country.tiles` обновляется вне боевой системы — после боевой системы, но до расчёта income.
+- Win condition проверяется после income.
+
+## 10. Валидация
+
+- Один юнит не может быть в нескольких приказах 6/7/8.
+- Превышение суммы выделенных юнитов над доступным — ошибка.
+- Поддерживать несуществующий переход можно.
+- Порядок вычитания 6/7/8 не важен при валидных приказах.
+- Поддерживать страну, не владеющую `from`/`target`, можно — сторона поддержки определяется владельцем `from`.
+
+
+## A. Ключевание support-записей
+
+Support-записи (`Tile.defenders.support[j]` и `ArmyGroup.support[j]`) ключуются **тайлом-источником** `j`, а не группой, через которую support попал в тайл. Это значит:
+
+- при слиянии подкреплений в `Tile.defenders.support[j]` записи от разных `arrived[i]` с одинаковым `j` суммируются;
+- идентичность «через какую именно arrived-группу пришла эта support-запись» после слияния теряется и далее не восстанавливается;
+- распределение потерь support-пехоты опирается только на разбивку по `j`, а не на разбивку по группам.
+
+Это позволяет не хранить support как часть `ArmyGroup` и не терять информацию, нужную для пропорционального распределения потерь.
+
+---
+
+## B. Распределение потерь support-пехоты в основном бою
+
+Support-потери в основном бою распределяются **так же, как в фазе перемещения**: пропорционально размеру support-армий (по `j`) на момент начала основного боя, с округлением вверх.
+
+Правило:
+
+1. Перед основным боем фиксируется `supportinfantry_start[j]` — начальный размер support-пехоты из тайла `j`, участвующей в данной партии.
+2. По итогам расчёта `attack1vall`/`defend1vall` определяется суммарное число support-пехотинцев, которые должны быть потеряны от пушек противника (`losed_support_from_damage`).
+3. Это число распределяется по `j` пропорционально `supportinfantry_start[j]`, с округлением вверх:
+   ```
+   for (j in support_sources) {
+       loss_j = ceil(losed_support_from_damage * supportinfantry_start[j] / total_supportinfantry_start);
+   }
+   ```
+4. Сумма `loss_j` может превышать `losed_support_from_damage`. Это нормально и не пересчитывает исход боя.
+5. Дополнительно support-пехота может быть **отброшена** пехотой противника (`passivesupportinfantry`). Отброшенная support-пехота:
+   - удаляется из `support[j].infantry`;
+   - **остаётся** в `infantrywithoutbonus` своего тайла `j`;
+   - в `losedinfantry` не пишется.
+6. Убитая пушками support-пехота:
+   - вычитается из `infantrywithoutbonus` тайла `j`;
+   - вычитается из `support[j].infantry`;
+   - пишется в `losedinfantry` соответствующей армии.
+
+Разница между «отброшена» и «убита» важна: отброшенная остаётся физически в своём тайле и позже может участвовать в своём основном бою как `infantrywithoutbonus`, убитая исчезает.
+
+---
+
+## C. Накопление потерь и кламп
+
+Во время основного боя потери **не применяются сразу**, а накапливаются в `losedinfantry` / `losedcannons` соответствующих армий. Это нужно, потому что одна и та же армия может нести потери одновременно:
+
+- как основная сила в своём основном бою;
+- как `infantrywithoutbonus` (например, если она прибыла подкреплением к союзнику);
+- как support в чужом бою.
+
+Правило:
+
+- потери обычной пехоты и пушек пишутся в `losed*` той армии, к которой они относятся;
+- потери support-пехоты от пушек распределяются по тайлам-источникам `j` (см. B) и пишутся в `losedinfantry` армий, стоящих в этих тайлах;
+- если одна армия получает потери из нескольких источников, они **суммируются** в её `losed*`.
+
+Применение потерь выполняется одним финальным проходом после всех основных боёв:
+```
+for (army in all_armies) {
+    army.infantry = max(0, army.infantry - army.losedinfantry);
+    army.cannons  = max(0, army.cannons  - army.losedcannons);
+}
+```
+Кламп `>= 0` обязателен: из-за округления вверх суммарные распределённые потери могут превышать фактическое число юнитов.
+
+---
+
+## D. Двухпроходность основного боя
+
+Основной бой **нельзя** разрешать инкрементально, тайл за тайлом, потому что:
+
+- support-пехота, погибшая в своём основном бою, всё ещё должна успеть поддержать чужой бой;
+- support-пушка, захваченная в своём основном бою, всё ещё должна успеть выстрелить в поддержке.
+
+Поэтому основной бой выполняется в два прохода:
+
+**Проход 1 (расчёт).** Для всех тайлов одновременно, от состояния **до основных боёв**:
+
+- формируются `Party`;
+- считаются `Power`, `Damage`, `PerceivedPower`;
+- выполняется распределение атак по оппонентам;
+- вызываются `attack1vall` / `defend1vall`;
+- определяются победители, захваты, отступления;
+- все потери пишутся в `losed*`, но **не применяются**.
+
+**Проход 2 (применение).** Одним общим проходом:
+
+- применяются `losed*` с клампом (см. C);
+- выполняется смена `owner`;
+- выполняется захват пушек;
+- выполняются отступления (см. раздел про отступление);
+- переносятся support-записи (см. ниже);
+- сбрасываются эфемерные поля.
+
+Это гарантирует, что все основные бои эквивалентны одновременным, и что последовательная имплементация даёт тот же результат.
+
+---
+
+## E. Формирование армии победителя
+
+Фраза «агрегирующая все `party.groups.army[i]`» вводит в заблуждение: после основного боя **группы как отдельные сущности не сохраняются**. Победившая партия формирует **одну** армию в `Tile.defenders.army`.
+
+Правило:
+
+- все выжившие юниты партии после применения `losed*` сливаются в одну армию:
+  - `infantry` + `infantrywithoutbonus` → `infantry` новой армии;
+  - `cannons` + `usedcannons` + захваченные `cannons` + захваченные `usedcannons` → `cannons` новой армии;
+- все пушки после боя считаются активными: `usedcannons → cannons`;
+- support-записи после основного боя как поддержка не переносятся; их потери уже учтены в `losed*`, а остатки вливаются в `infantrywithoutbonus`/`usedcannons` соответствующих тайлов-источников;
+- при ничье армии сторон сохраняются раздельно и отступают (см. раздел про отступление).
+
+---
+
+## F. `usedcannons`: явные правила
+
+`usedcannons` — это пушки, которые уже отстрелялись в этом ходу. Они:
+
+- **не входят** в `Damage` партии;
+- **не уменьшают** `Power` противника (не подавляют);
+- **не уничтожаются** в фазу `Damage` (их нельзя убить ответным огнём);
+- **могут быть захвачены** победителем;
+- после основного боя **превращаются в `cannons`** (`usedcannons → cannons`).
+
+То же самое относится к `supportcannons`: они дают `Damage`, подавляют `Power`, но не уничтожаются в фазу `Damage`. Если support-пушка выстрелила, она удаляется из `support[j].cannons`, но остаётся в `usedcannons` своего тайла `j`.
+
+---
+
+## G. Нулевой знаменатель в распределении
+
+Если сумма `PerceivedPower` всех оппонентов партии равна 0, распределение атак не выполняется: партия наносит 0 `Power` и 0 `Damage` каждому оппоненту. Формально:
+```
+if (den == 0) {
+    for (opponent in opponents)
+        attack[opponent] = 0;
+} else {
+    for (opponent in opponents)
+        attack[opponent] = opponent.PerceivedPower / den * own.Power;
+}
+```
+Это важно для тайлов без войск и для партий, состоящих только из `usedcannons`.
+
+---
+
+## H. Тривиальная defender party при `ownerprevmove == null`
+
+Defender party создаётся всегда, даже если `tile.ownerprevmove == null`. В этом случае:
+
+- её страна — индекс `-1`, не принадлежащий ни одной стране;
+- её `infantry`, `cannons`, `supportinfantry`, `supportcannons` равны 0;
+- её `Power = Damage = PerceivedPower = 0`;
+- она участвует в распределении атак как оппонент с нулевым `PerceivedPower`, то есть не получает атак;
+- она не может получить урон;
+- если все атакующие аннигилировали, а defender party тривиальна — фиксируется ничья.
+
+---
+
+## I. `Order8` и сторона поддержки
+
+Для `Order8` сторона поддержки — **владелец `target`** (то есть защитник тайла), а не владелец `from`. Это отличается от `Order7`, где сторона поддержки определяется владельцем `from` (началом поддерживаемого перехода).
+
+Формально:
+- `Order7`: поддержка перехода `target_from → target_to` сражается на стороне владельца `target_from`;
+- `Order8`: поддержка обороны тайла `target` сражается на стороне владельца `target`.
+
+Support-запись при этом всё равно ключуется тайлом-источником `from`, а не тайлом `target`.
+
+---
+
+## J. Двойной учёт союзных `arrived`
+
+После того как союзные `arrived[i]` слиты в `Tile.defenders`, соответствующие `arrived[i]` **не должны** повторно учитываться при формировании атакующих партий. Формально: при агрегации атакующих нужно пропускать те `i`, для которых `tile.neighbours[i].ownerprevmove == tile.ownerprevmove`.
+
+Это устраняет двойной учёт юнитов, которые одновременно попали и в defender party (через слияние), и в attacker party (через `arrived`).
+
+---
+
+## K. Порядок операций внутри прохода 1
+
+Чтобы не было разночтений, зафиксирую порядок:
+
+1. Для каждого тайла: слить союзные `arrived` в `defenders`, пометить их как исключённые из атакующих (см. J).
+2. Для каждого тайла: зафиксировать `supportinfantry_start[j]` для всех `j` (см. B).
+3. Для каждого тайла: сформировать партии.
+4. Для каждого тайла: посчитать `Power`, `Damage`, `PerceivedPower`.
+5. Для каждого тайла: посчитать распределение атак по оппонентам, с правилом нулевого знаменателя (см. G).
+6. Для каждого тайла: вызвать `attack1vall` / `defend1vall` для каждой партии.
+7. Для каждого тайла: определить победителя, захват, отступления.
+8. Записать все потери в `losed*` (см. C).
+
+Затем — проход 2 (см. D).
