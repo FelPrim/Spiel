@@ -2901,19 +2901,37 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     eventSource = new EventSource(`/lobby/${encodeURIComponent(LOBBY_CODE)}/events`);
     eventSource.onmessage = (e) => {
+      let data;
       try {
-        const data = JSON.parse(e.data);
-        if (Array.isArray(data.participants)) {
-          renderParticipants(data.participants);
-        }
-        if (typeof data.mapVersion === "number" && data.mapVersion !== lastMapVersion) {
-          lastMapVersion = data.mapVersion;
-          if (data.mapVersion > 0) {
-            void downloadAndApplyMap();
-          }
-        }
+        data = JSON.parse(e.data);
       } catch (err) {
         console.error("\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0440\u0430\u0437\u043E\u0431\u0440\u0430\u0442\u044C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 SSE:", err);
+        return;
+      }
+      switch (data.type) {
+        case "participants":
+          renderParticipants(data.participants);
+          break;
+        case "mapVersion":
+          if (data.version !== lastMapVersion) {
+            lastMapVersion = data.version;
+            if (data.version > 0) {
+              void downloadAndApplyMap();
+            }
+          }
+          break;
+        case "gameStart":
+        case "turnStarted":
+        case "ordersBatch":
+        case "allReady":
+        case "turnResult":
+        case "hostChanged":
+        case "historyInfo":
+          break;
+        default: {
+          const _exhaustive = data;
+          console.warn("\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u043E\u0435 SSE-\u0441\u043E\u0431\u044B\u0442\u0438\u0435:", _exhaustive);
+        }
       }
     };
     eventSource.onerror = () => {

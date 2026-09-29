@@ -1,14 +1,10 @@
 // client/lobby/lobby.ts
 import { MapView } from '../shared/mapview';
+import type { SseEvent } from '../../shared/protocol';
 
 const LOBBY_CODE: string | null =
     new URLSearchParams(location.search).get('code') ||
     sessionStorage.getItem('lobbyCode');
-
-interface LobbyEventData {
-    participants?: string[];
-    mapVersion?: number;
-}
 
 function requireEl<T extends HTMLElement>(id: string): T {
     const el = document.getElementById(id);
@@ -44,9 +40,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mapView = new MapView(viewport);
     mapView.onStatus(text => { mapStatus.textContent = text; });
-    // На этапе лобби на выбранный тайл мы отдельно не реагируем —
-    // статус уже приходит через onStatus.
-    // mapView.onTileClick(tileId => { ... });
 
     // ================== Скачивание карты из лобби ==================
     async function downloadAndApplyMap(): Promise<void> {
@@ -71,7 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastMapVersion = -1;
 
     async function initLobby(): Promise<void> {
-        // 1. Проверяем, что сессия жива
         try {
             const r = await fetch('/me');
             if (!r.ok) { location.href = '../index.html'; return; }
@@ -80,7 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 2. Проверяем, что лобби реально существует
         if (!LOBBY_CODE) { location.href = '../index.html'; return; }
 
         try {
@@ -96,26 +87,46 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 3. Открываем SSE
         eventSource = new EventSource(`/lobby/${encodeURIComponent(LOBBY_CODE)}/events`);
 
         eventSource.onmessage = (e: MessageEvent<string>) => {
+            let data: SseEvent;
             try {
-                const data = JSON.parse(e.data) as LobbyEventData;
-
-                if (Array.isArray(data.participants)) {
-                    renderParticipants(data.participants);
-                }
-
-                if (typeof data.mapVersion === 'number'
-                        && data.mapVersion !== lastMapVersion) {
-                    lastMapVersion = data.mapVersion;
-                    if (data.mapVersion > 0) {
-                        void downloadAndApplyMap();
-                    }
-                }
+                data = JSON.parse(e.data) as SseEvent;
             } catch (err) {
                 console.error('Не удалось разобрать сообщение SSE:', err);
+                return;
+            }
+
+            switch (data.type) {
+                case 'participants':
+                    renderParticipants(data.participants);
+                    break;
+
+                case 'mapVersion':
+                    if (data.version !== lastMapVersion) {
+                        lastMapVersion = data.version;
+                        if (data.version > 0) {
+                            void downloadAndApplyMap();
+                        }
+                    }
+                    break;
+
+                case 'gameStart':
+                case 'turnStarted':
+                case 'ordersBatch':
+                case 'allReady':
+                case 'turnResult':
+                case 'hostChanged':
+                case 'historyInfo':
+                    // Лобби на игровые события пока не реагирует.
+                    break;
+
+                default: {
+                    // exhaustive check: если появится новый тип — TS напомнит.
+                    const _exhaustive: never = data;
+                    console.warn('Неизвестное SSE-событие:', _exhaustive);
+                }
             }
         };
 
@@ -171,8 +182,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch { /* нет тела */ }
                 mapStatus.textContent = msg;
             }
-            // При успехе ничего не делаем: сервер разошлёт SSE с новой
-            // mapVersion, и мы (как и все остальные) скачаем и применим карту.
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             mapStatus.textContent = 'Ошибка сети: ' + msg;

@@ -30,11 +30,8 @@ const USERS_FILE = process.env.USERS_FILE
   ? resolve(process.env.USERS_FILE)
   : join(DATA_DIR, "users.json");
 
-// Значения по умолчанию зависят от того, собран ли бинарник.
-// Их всегда можно переопределить через переменные окружения.
 const DEFAULTS = isCompiled
   ? {
-      // prod: слушаем всё, привилегированные порты, сертификаты Let's Encrypt
       PORT: 443,
       HTTP_PORT: 80,
       HOST: "0.0.0.0",
@@ -42,7 +39,6 @@ const DEFAULTS = isCompiled
       TLS_CERT: "/etc/letsencrypt/live/spiel.crabdance.com/fullchain.pem",
     }
   : {
-      // dev: только локально, непривилегированные порты, самоподписанные
       PORT: 8443,
       HTTP_PORT: 8080,
       HOST: "localhost",
@@ -84,20 +80,54 @@ function getLobbyNames(lobby) {
   return Array.from(lobby.participants.keys());
 }
 
-function broadcastLobby(lobby) {
-  const payload = `data: ${JSON.stringify({
-    participants: getLobbyNames(lobby),
-    mapVersion: lobby.mapVersion,
-  })}\n\n`;
+// -------- SSE helpers (типизированные события) -------- // ← НОВОЕ
+
+/** Сериализует одно SseEvent в формат SSE. */
+function sseFormat(event) {
+  return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+/** Шлёт событие всем участникам лобби. */
+function sendEvent(lobby, event) {
+  const payload = sseFormat(event);
   for (const conns of lobby.participants.values()) {
     for (const controller of conns) {
-      try {
-        controller.enqueue(payload);
-      } catch {
-        // клиент уже отвалился — очистка произойдёт в cancel()
-      }
+      try { controller.enqueue(payload); } catch { /* клиент уже отвалился */ }
     }
   }
+}
+
+/** Шлёт событие одному пользователю (всем его соединениям). */
+function sendEventToUser(lobby, username, event) {
+  const conns = lobby.participants.get(username);
+  if (!conns) return;
+  const payload = sseFormat(event);
+  for (const controller of conns) {
+    try { controller.enqueue(payload); } catch { /* клиент уже отвалился */ }
+  }
+}
+
+/** Персонализированная рассылка: eventFactory(username) → SseEvent. */
+function sendPersonalized(lobby, eventFactory) {
+  for (const [username, conns] of lobby.participants) {
+    const payload = sseFormat(eventFactory(username));
+    for (const controller of conns) {
+      try { controller.enqueue(payload); } catch { /* клиент уже отвалился */ }
+    }
+  }
+}
+
+/** Обновление состава участников + текущей версии карты. */
+function broadcastLobby(lobby) {
+  sendEvent(lobby, {
+    type: 'participants',
+    participants: getLobbyNames(lobby),
+    host: lobby.host,
+  });
+  sendEvent(lobby, {
+    type: 'mapVersion',
+    version: lobby.mapVersion,
+  });
 }
 
 function destroyLobby(code) {
@@ -107,12 +137,20 @@ function destroyLobby(code) {
   lobbies.delete(code);
 }
 
+// -------- Валидация SerializedGameState (этап 4.4) -------- // ← НОВОЕ
+
+function looksLikeState(s) {
+  return s && typeof s.turn === 'number'
+    && Array.isArray(s.tiles) && Array.isArray(s.countries)
+    && s.tiles.length === s.tilescount
+    && s.countries.length === s.countriescount;
+}
+
 // ======================= Сессии =======================
 
 const SESSION_COOKIE = "session";
-const SESSION_MAX_AGE = 365 * 24 * 60 * 60; // секунды
+const SESSION_MAX_AGE = 365 * 24 * 60 * 60;
 
-// Простое подписание cookie через HMAC (встроено в Bun через crypto)
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-please";
 
 function b64encode(str) {
@@ -138,8 +176,6 @@ async function signSession(data) {
     ["sign"]
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(json));
-  // payload — через b64encode (UTF-8-safe для кириллицы)
-  // подпись — через btoa (raw байты, никакого TextEncoder)
   const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
   return `${b64encode(json)}.${sigB64}`;
 }
@@ -167,7 +203,6 @@ async function verifySession(token) {
   if (!valid) return null;
   return JSON.parse(json);
 }
-
 
 async function getSession(req) {
   const cookie = req.headers.get("cookie") || "";
@@ -232,16 +267,15 @@ async function handleRequest(req) {
   const method = req.method;
 
   // ---------- Отдача статики из client/ ----------
-  // Всё, что не начинается с /auth, /me, /logout, /lobby — статика
   const isApi =
 	  pathname === "/auth" ||
 	  pathname === "/me" ||
 	  pathname === "/logout" ||
 	  pathname === "/lobby" ||
-	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map)$/.test(pathname);
+	  // ← НОВОЕ: добавлены start/state/orders
+	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map|start|state|orders)$/.test(pathname);
 
   if (!isApi) {
-    // Специальные маршруты для видео
     if (pathname === "/video.webm") {
 	  const f = file(join(DATA_DIR, "video.webm"));
 	  if (!(await f.exists())) return new Response("Not Found", { status: 404 });
@@ -257,7 +291,6 @@ async function handleRequest(req) {
 	  });
 	}
 
-    // Статика из client/
     const filePath = resolve(CLIENT_DIR, pathname === "/" ? "index.html" : "." + pathname);
 	if (!filePath.startsWith(CLIENT_DIR + "/") && filePath !== join(CLIENT_DIR, "index.html")) {
 	  return new Response("Not Found", { status: 404 });
@@ -293,8 +326,6 @@ async function handleRequest(req) {
 		} else {
 		  return json({ error: "Неверный пароль" }, 401);
 		}
-	
-	
     } else {
       const passwordHash = await Bun.password.hash(password, {
         algorithm: "bcrypt",
@@ -308,7 +339,6 @@ async function handleRequest(req) {
 	  200,
 	  { "Set-Cookie": await sessionCookie({ user: { username } }) }
 	);
-	  
     }
   }
 
@@ -320,7 +350,7 @@ if (method === "GET" && pathname === "/me") {
 	return json(
 		{ user: session.user },
 		200,
-		{ "Set-Cookie": await sessionCookie(session) } // ← refresh
+		{ "Set-Cookie": await sessionCookie(session) }
 	);
 }
 
@@ -357,8 +387,18 @@ if (method === "GET" && pathname === "/me") {
 	  code,
 	  participants: new Map(),
 	  reaper: null,
-	  mapBuffer: null,   // Uint8Array с содержимым .spielmap
-	  mapVersion: 0,     // 0 = карты нет; увеличивается при каждой загрузке
+	  mapBuffer: null,
+	  mapVersion: 0,
+
+	  // ← НОВОЕ: игровое состояние лобби
+	  host: null,                    // username первого подключившегося (SSE)
+	  started: false,                // кто-то нажал «Старт»
+	  history: [],                   // history[i] — состояние после (i+1)-го хода
+	  currentTurn: 0,                // === history.length
+	  ordersByUser: new Map(),       // username → Order[]
+	  ready: new Set(),              // username'ы, нажавшие «Готов»
+	  resolving: false,              // ход разрешается хостом
+	  gameOver: false,
 	};
 
     lobby.reaper = setTimeout(() => {
@@ -400,7 +440,7 @@ if (method === "POST" && mapMatch) {
   const lobby = lobbies.get(code);
   if (!lobby) return json({ error: "Лобби не найдено" }, 404);
 
-  const MAX_MAP_BYTES = 20 * 1024 * 1024; // запас: файлы до 10 МБ
+  const MAX_MAP_BYTES = 20 * 1024 * 1024;
   const declared = Number(req.headers.get("content-length") || 0);
   if (declared && declared > MAX_MAP_BYTES) {
     return json({ error: "Файл слишком большой" }, 413);
@@ -448,6 +488,185 @@ if (method === "GET" && mapMatch) {
   });
 }
 
+// ---------- POST /lobby/:code/start — старт игры ---------- // ← НОВОЕ
+const startMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/start$/);
+if (method === "POST" && startMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = startMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (!lobby.participants.has(username)) {
+    return json({ error: "Вы не участник этого лобби" }, 403);
+  }
+  if (lobby.started) return json({ error: "Игра уже началась" }, 409);
+  if (lobby.gameOver) return json({ error: "Игра завершена" }, 409);
+  if (!lobby.mapBuffer) {
+    return json({ error: "Карта ещё не загружена" }, 409);
+  }
+
+  // На случай, если по какой-то причине никто не зашёл через SSE
+  // (например, curl-тест) — назначаем инициатора хостом.
+  if (!lobby.host) lobby.host = username;
+
+  lobby.started = true;
+
+  sendPersonalized(lobby, (u) => ({
+    type: 'gameStart',
+    turn: 0,
+    youAreHost: u === lobby.host,
+  }));
+  sendEvent(lobby, { type: 'turnStarted', turn: 0 });
+
+  return json({ success: true, turn: 0 });
+}
+
+// ---------- /lobby/:code/state — GET/POST состояния ---------- // ← НОВОЕ
+const stateMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/state$/);
+
+if (method === "GET" && stateMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = stateMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (!lobby.participants.has(username)) {
+    return json({ error: "Вы не участник этого лобби" }, 403);
+  }
+
+  const turnParam = url.searchParams.get("turn");
+  if (turnParam !== null) {
+    const n = Number(turnParam);
+    if (!Number.isInteger(n) || n < 1) {
+      return json({ error: "Некорректный параметр turn" }, 400);
+    }
+    const s = lobby.history[n - 1];
+    if (!s) return json({ error: "Состояние не найдено" }, 404);
+    return json(s);
+  }
+
+  const latest = lobby.history[lobby.history.length - 1];
+  if (!latest) return json({ error: "Состояние недоступно" }, 404);
+  return json(latest);
+}
+
+if (method === "POST" && stateMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = stateMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (lobby.host !== username) {
+    return json({ error: "Только хост может отправлять состояние" }, 403);
+  }
+  if (!lobby.started) {
+    return json({ error: "Игра ещё не началась" }, 409);
+  }
+  if (lobby.gameOver) {
+    return json({ error: "Игра завершена" }, 409);
+  }
+
+  const MAX_STATE_BYTES = 50 * 1024 * 1024;
+  const declared = Number(req.headers.get("content-length") || 0);
+  if (declared && declared > MAX_STATE_BYTES) {
+    return json({ error: "Состояние слишком большое" }, 413);
+  }
+
+  const body = await parseBody(req);
+  const state = body.state;
+  if (!looksLikeState(state)) {
+    return json({ error: "Некорректное состояние" }, 400);
+  }
+  if (state.turn !== lobby.currentTurn + 1) {
+    return json({
+      error: `Ожидался turn=${lobby.currentTurn + 1}, получен ${state.turn}`,
+    }, 409);
+  }
+
+  lobby.history.push(state);
+  lobby.currentTurn = lobby.history.length;
+  lobby.ordersByUser.clear();
+  lobby.ready.clear();
+  lobby.resolving = false;
+  if (body.gameOver === true) lobby.gameOver = true;
+
+  sendEvent(lobby, {
+    type: 'turnResult',
+    turn: lobby.currentTurn,
+    state,
+  });
+  sendEvent(lobby, {
+    type: 'turnStarted',
+    turn: lobby.currentTurn,
+  });
+
+  return json({ success: true, turn: lobby.currentTurn });
+}
+
+// ---------- POST /lobby/:code/orders — приказы игрока ---------- // ← НОВОЕ
+const ordersMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/orders$/);
+if (method === "POST" && ordersMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = ordersMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (!lobby.participants.has(username)) {
+    return json({ error: "Вы не участник этого лобби" }, 403);
+  }
+  if (!lobby.started) {
+    return json({ error: "Игра ещё не началась" }, 409);
+  }
+  if (lobby.gameOver) {
+    return json({ error: "Игра завершена" }, 409);
+  }
+  if (lobby.resolving) {
+    return json({ error: "Ход уже разрешается" }, 409);
+  }
+
+  const body = await parseBody(req);
+  const orders = Array.isArray(body.orders) ? body.orders : [];
+  const ready = body.ready === true;
+
+  lobby.ordersByUser.set(username, orders);
+  if (ready) lobby.ready.add(username);
+  else lobby.ready.delete(username);
+
+  sendEvent(lobby, {
+    type: 'ordersBatch',
+    from: username,
+    orders,
+    ready,
+  });
+
+  if (lobby.ready.size > 0 && lobby.ready.size === lobby.participants.size) {
+    lobby.resolving = true;
+    const allReadyEvent = {
+      type: 'allReady',
+      turn: lobby.currentTurn + 1,
+    };
+    if (lobby.host) {
+      sendEventToUser(lobby, lobby.host, allReadyEvent);
+    } else {
+      sendEvent(lobby, allReadyEvent);
+    }
+  }
+
+  return json({ success: true, ready: lobby.ready.size });
+}
+
   // ---------- GET /lobby/:code/events (SSE) ----------
   const eventsMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/events$/);
   if (method === "GET" && eventsMatch) {
@@ -462,19 +681,12 @@ if (method === "GET" && mapMatch) {
 
     const username = session.user.username;
 
-    // Отключаем idle-таймаут для этого запроса
-    // (в Bun.serve это делается через server.timeout в routes,
-    //  но мы используем fetch — см. примечание ниже)
-    // В fetch-режиме Bun автоматически не рвёт долгие соединения,
-    // если поток данных не пустует. Heartbeat раз в 25 с решает проблему.
-
     let controllerRef = null;
 
     const stream = new ReadableStream({
       start(controller) {
         controllerRef = controller;
 
-        // Регистрируем соединение
         let conns = lobby.participants.get(username);
         if (!conns) {
           conns = new Set();
@@ -482,16 +694,18 @@ if (method === "GET" && mapMatch) {
         }
         conns.add(controller);
 
-        // Снимаем reaper, если лобби было пустым
+        // ← НОВОЕ: первый подключившийся становится хостом
+        if (!lobby.host) {
+          lobby.host = username;
+        }
+
         if (lobby.reaper) {
           clearTimeout(lobby.reaper);
           lobby.reaper = null;
         }
 
-        // Первое сообщение — текущий список
         broadcastLobby(lobby);
 
-        // Heartbeat
         const heartbeat = setInterval(() => {
           try {
             controller.enqueue(": ping\n\n");
@@ -501,7 +715,6 @@ if (method === "GET" && mapMatch) {
         }, 25000);
         if (heartbeat.unref) heartbeat.unref();
 
-        // Сохраняем heartbeat для очистки в cancel
         this._heartbeat = heartbeat;
       },
 
@@ -513,8 +726,26 @@ if (method === "GET" && mapMatch) {
         set.delete(controllerRef);
         if (set.size === 0) lobby.participants.delete(username);
 
+        // ← НОВОЕ: смена хоста при отключении
+        if (lobby.host === username && !lobby.gameOver) {
+          const remaining = [...lobby.participants.keys()];
+          lobby.host = remaining[0] ?? null;
+        }
+
         if (lobby.participants.size === 0) {
-          destroyLobby(code);
+          // ← НОВОЕ: если игра началась — не убиваем лобби сразу,
+          // даём TTL на переподключение.
+          if (lobby.started && !lobby.gameOver) {
+            if (!lobby.reaper) {
+              lobby.reaper = setTimeout(() => {
+                const l = lobbies.get(code);
+                if (l && l.participants.size === 0) destroyLobby(code);
+              }, EMPTY_LOBBY_TTL_MS);
+              if (lobby.reaper.unref) lobby.reaper.unref();
+            }
+          } else {
+            destroyLobby(code);
+          }
         } else {
           broadcastLobby(lobby);
         }
@@ -525,7 +756,6 @@ if (method === "GET" && mapMatch) {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
-        //Connection: "keep-alive",
         "X-Accel-Buffering": "no",
       },
     });
@@ -537,14 +767,13 @@ if (method === "GET" && mapMatch) {
 
 // ======================= Запуск серверов =======================
 
-// HTTPS + HTTP/3
 const httpsServer = Bun.serve({
   port: PORT,
   hostname: HOST,
   tls,
-  http3: true,    // включаем HTTP/3 (QUIC) на том же порту
+  http3: true,
   http2: true,
-  http1: true,    // оставляем HTTP/1.1 для совместимости
+  http1: true,
   idleTimeout: 0,
   async fetch(req) {
     try {
@@ -563,7 +792,6 @@ const httpsServer = Bun.serve({
 console.log(`HTTPS/HTTP/3 сервер запущен на https://localhost:${PORT}`);
 console.log(`HTTP/3 (QUIC) слушает UDP/${PORT}`);
 
-// HTTP → HTTPS редирект
 Bun.serve({
   port: HTTP_PORT,
   hostname: HOST,
