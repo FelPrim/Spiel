@@ -70,6 +70,10 @@ const CANNON_COST = 3;
 const TREASURY_RETENTION = 0.8;
 const EPS = 1e-9;
 
+export const INITIAL_ECONOMY = 1000;
+export const INITIAL_INFANTRY = 0;
+export const INITIAL_CANNONS = 0;
+
 function round3(x: number): number {
   return Math.round(x * 1000) / 1000;
 }

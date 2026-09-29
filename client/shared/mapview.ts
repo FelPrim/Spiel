@@ -36,6 +36,8 @@ export interface LoadedMapData {
     provinceIndices: Map<number, Uint32Array>;
     overlayCanvas: HTMLCanvasElement;
     overlayCtx: CanvasRenderingContext2D;
+    countryOverlayCanvas: HTMLCanvasElement;   // ← НОВОЕ
+    countryOverlayCtx: CanvasRenderingContext2D; // ← НОВОЕ
     info: MapInfo;
     selectedIndex: number;
     setSelection: (indices: Uint32Array | null) => void;
@@ -254,6 +256,19 @@ export class MapView {
                 URL.revokeObjectURL(this.loadedMapData.mapUrl);
             }
 
+            // Оверлей стран — ниже оверлея выделения, чтобы белая
+            // подсветка «курсора» рисовалась поверх.
+            const countryOverlayCanvas = document.createElement('canvas');
+            countryOverlayCanvas.id = 'map-country-overlay';
+            countryOverlayCanvas.width = W;
+            countryOverlayCanvas.height = H;
+            countryOverlayCanvas.style.position = 'absolute';
+            countryOverlayCanvas.style.top = '0';
+            countryOverlayCanvas.style.left = '0';
+            countryOverlayCanvas.style.pointerEvents = 'none';
+            const countryOverlayCtx = countryOverlayCanvas.getContext('2d');
+            if (!countryOverlayCtx) throw new Error('Не удалось получить 2D-контекст для country overlay');
+
             this.mapDisplay.innerHTML = '';
 
             const img = document.createElement('img');
@@ -262,6 +277,7 @@ export class MapView {
             img.id = 'loaded-map-image';
             img.draggable = false;
             this.mapDisplay.appendChild(img);
+            this.mapDisplay.appendChild(countryOverlayCanvas);
             this.mapDisplay.appendChild(overlayCanvas);
 
             this.loadedMapData = {
@@ -274,6 +290,8 @@ export class MapView {
                 provinceIndices,
                 overlayCanvas,
                 overlayCtx,
+                countryOverlayCanvas,
+                countryOverlayCtx,
                 info,
                 selectedIndex: -1,
                 setSelection
@@ -326,6 +344,46 @@ export class MapView {
         this.loadedMapData.setSelection(null);
         this.loadedMapData.selectedIndex = -1;
     }
+	
+	    /**
+     * Отрисовать страны поверх карты. Каждая страна — одна провинция,
+     * закрашенная «истинным» цветом провинции с фиксированной alpha.
+     * tileId === индекс в info.colors. Порядок: ниже оверлея выделения.
+     */
+    setCountries(list: Array<{ tileId: number }>): void {
+        if (!this.loadedMapData) return;
+        const { W, H, provinceIndices, info, countryOverlayCtx } = this.loadedMapData;
+
+        countryOverlayCtx.clearRect(0, 0, W, H);
+
+        if (list.length === 0) return;
+
+        const imgData = countryOverlayCtx.createImageData(W, H);
+        const d = imgData.data;
+
+        for (const { tileId } of list) {
+            if (!Number.isInteger(tileId) || tileId < 0 || tileId >= info.colors.length) continue;
+            const rgb = info.colors[tileId];
+            const indices = provinceIndices.get(rgb);
+            if (!indices) continue;
+
+            const r = (rgb >> 16) & 0xff;
+            const g = (rgb >> 8) & 0xff;
+            const b = rgb & 0xff;
+            for (let k = 0; k < indices.length; k++) {
+                const p = indices[k] * 4;
+                d[p] = r;
+                d[p + 1] = g;
+                d[p + 2] = b;
+                d[p + 3] = MapView.COUNTRY_ALPHA;
+            }
+        }
+
+        countryOverlayCtx.putImageData(imgData, 0, 0);
+    }
+
+    /** Alpha (0..255) для заливки стран. Единственное место для настройки. */
+    static readonly COUNTRY_ALPHA = 100;
 
     destroy(): void {
         this.viewport.removeEventListener('pointerdown',   this._onPointerDown);

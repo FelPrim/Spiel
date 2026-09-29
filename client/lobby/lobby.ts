@@ -21,25 +21,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
     codeDisplay.textContent = LOBBY_CODE || '—';
 
-    function renderParticipants(names: string[]): void {
-        countEl.textContent = String(names.length);
-        listEl.innerHTML = '';
-        for (const name of names) {
-            const li = document.createElement('li');
-            li.textContent = name;
-            listEl.appendChild(li);
-        }
-    }
-
     // ================== Карта: UI-элементы ==================
     const loadMapBtn       = requireEl<HTMLButtonElement>('load-map');
     const mapFileInput     = requireEl<HTMLInputElement>('map-file');
     const mapStatus        = requireEl<HTMLDivElement>('map-status');
-    const selectionModeBtn = requireEl<HTMLButtonElement>('selection-mode');
+    const pickCountryBtn   = requireEl<HTMLButtonElement>('selection-mode');
     const viewport         = requireEl<HTMLDivElement>('viewport');
 
     const mapView = new MapView(viewport);
     mapView.onStatus(text => { mapStatus.textContent = text; });
+
+    // ================== Состояние лобби (клиентская копия) ==================
+    let myUsername: string | null = null;
+    let lastParticipants: string[] = [];
+    const countriesByUser = new Map<string, number>();   // username → tileId
+    let pickingCountry = false;
+    let lastMapVersion = -1;
+
+    // ================== Рендер списка участников ==================
+    function provinceColorHex(tileId: number): string | null {
+        const info = mapView.loadedMapData?.info;
+        if (!info || tileId < 0 || tileId >= info.colors.length) return null;
+        const rgb = info.colors[tileId];
+        return `#${rgb.toString(16).padStart(6, '0')}`;
+    }
+
+    function renderParticipants(): void {
+        countEl.textContent = String(lastParticipants.length);
+        listEl.innerHTML = '';
+        for (const name of lastParticipants) {
+            const li = document.createElement('li');
+
+            const tileId = countriesByUser.get(name);
+            const hex = tileId != null ? provinceColorHex(tileId) : null;
+            if (hex) {
+                const swatch = document.createElement('span');
+                swatch.style.cssText =
+                    'display:inline-block;width:10px;height:10px;' +
+                    'border-radius:2px;margin-right:6px;vertical-align:middle;' +
+                    'border:1px solid rgba(0,0,0,0.4);';
+                swatch.style.background = hex;
+                li.appendChild(swatch);
+            }
+
+            const label = tileId != null ? `${name} · #${tileId}` : name;
+            li.appendChild(document.createTextNode(label));
+            if (name === myUsername) {
+                li.style.fontWeight = 'bold';
+            }
+
+            listEl.appendChild(li);
+        }
+    }
+
+    function repaintCountries(): void {
+        const list = Array.from(countriesByUser.values()).map(tileId => ({ tileId }));
+        mapView.setCountries(list);
+    }
 
     // ================== Скачивание карты из лобби ==================
     async function downloadAndApplyMap(): Promise<void> {
@@ -53,24 +91,74 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const blob = await r.blob();
             await mapView.loadFromBlob(blob);
+            // Карта перерисована — восстановим оверлей стран и свотчи.
+            repaintCountries();
+            renderParticipants();
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             mapStatus.textContent = 'Ошибка скачивания: ' + msg;
         }
     }
 
+    // ================== Выбор страны ==================
+    async function postCountry(tileId: number | null): Promise<void> {
+        if (!LOBBY_CODE) return;
+        try {
+            const r = await fetch(`/lobby/${encodeURIComponent(LOBBY_CODE)}/country`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tileId }),
+            });
+            if (!r.ok) {
+                let msg = `Ошибка ${r.status}`;
+                try {
+                    const j = await r.json() as { error?: string };
+                    if (j && j.error) msg = j.error;
+                } catch { /* нет тела */ }
+                mapStatus.textContent = msg;
+                return;
+            }
+            const j = await r.json() as { success: boolean; tileId: number | null };
+            mapStatus.textContent = j.tileId != null
+                ? `Выбрана страна #${j.tileId}`
+                : 'Выбор страны снят';
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            mapStatus.textContent = 'Ошибка сети: ' + msg;
+        }
+    }
+
+    mapView.onTileClick((tileId) => {
+        if (!pickingCountry) return;
+        // Визуально снимаем белую подсветку «курсора» — выбор страны
+        // показывается отдельным цветным оверлеем.
+        mapView.clearSelection();
+        void postCountry(tileId);
+    });
+
+    pickCountryBtn.addEventListener('click', () => {
+        pickingCountry = !pickingCountry;
+        mapView.setSelectionMode(pickingCountry ? 'tile' : 'none');
+        pickCountryBtn.classList.toggle('active', pickingCountry);
+    });
+
     // ================== Подключение к лобби (SSE) ==================
     let eventSource: EventSource | null = null;
-    let lastMapVersion = -1;
 
-    async function initLobby(): Promise<void> {
+    async function fetchMe(): Promise<string | null> {
         try {
             const r = await fetch('/me');
-            if (!r.ok) { location.href = '../index.html'; return; }
+            if (!r.ok) return null;
+            const j = await r.json() as { user?: { username?: string } };
+            return j.user?.username ?? null;
         } catch {
-            location.href = '../index.html';
-            return;
+            return null;
         }
+    }
+
+    async function initLobby(): Promise<void> {
+        myUsername = await fetchMe();
+        if (!myUsername) { location.href = '../index.html'; return; }
 
         if (!LOBBY_CODE) { location.href = '../index.html'; return; }
 
@@ -100,7 +188,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             switch (data.type) {
                 case 'participants':
-                    renderParticipants(data.participants);
+                    lastParticipants = data.participants;
+                    renderParticipants();
                     break;
 
                 case 'mapVersion':
@@ -111,6 +200,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                     break;
+
+                case 'countries': {
+                    countriesByUser.clear();
+                    for (const [u, t] of Object.entries(data.countries)) {
+                        countriesByUser.set(u, t);
+                    }
+                    repaintCountries();
+                    renderParticipants();
+                    break;
+                }
 
                 case 'gameStart':
                 case 'turnStarted':
@@ -123,7 +222,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
 
                 default: {
-                    // exhaustive check: если появится новый тип — TS напомнит.
                     const _exhaustive: never = data;
                     console.warn('Неизвестное SSE-событие:', _exhaustive);
                 }
@@ -144,12 +242,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ================== Кнопки ==================
     loadMapBtn.addEventListener('click', () => {
         mapFileInput.click();
-    });
-
-    selectionModeBtn.addEventListener('click', () => {
-        const enabled = !mapView.selectionMode;
-        mapView.setSelectionMode(enabled ? 'tile' : 'none');
-        selectionModeBtn.classList.toggle('active', enabled);
     });
 
     // ================== Загрузка архива → отправка в лобби ==================

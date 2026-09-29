@@ -4,5 +4,8 @@
   },
   "testuser": {
     "passwordHash": "$2b$10$gsS0KLT6m7mfbOO/scDoFOAFeTIzG8VId.w5O3PxNKhMCINm0uR8C"
+  },
+  "FelPrim": {
+    "passwordHash": "$2b$10$Z3/WYotcmCav3gAtA69ul.G7396obwDMub5gh.h1ojmXCxlKbcUvK"
   }
 }

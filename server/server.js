@@ -128,6 +128,17 @@ function broadcastLobby(lobby) {
     type: 'mapVersion',
     version: lobby.mapVersion,
   });
+  sendEvent(lobby, {
+    type: 'countries',
+    countries: Object.fromEntries(lobby.countriesByUser),
+  });
+}
+
+function broadcastCountries(lobby) {
+  sendEvent(lobby, {
+    type: 'countries',
+    countries: Object.fromEntries(lobby.countriesByUser),
+  });
 }
 
 function destroyLobby(code) {
@@ -272,8 +283,7 @@ async function handleRequest(req) {
 	  pathname === "/me" ||
 	  pathname === "/logout" ||
 	  pathname === "/lobby" ||
-	  // ← НОВОЕ: добавлены start/state/orders
-	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map|start|state|orders)$/.test(pathname);
+	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map|start|state|orders|country)$/.test(pathname);
 
   if (!isApi) {
     if (pathname === "/video.webm") {
@@ -383,22 +393,23 @@ if (method === "GET" && pathname === "/me") {
       return json({ error: "Лобби с таким кодом уже существует" }, 409);
     }
 
-    const lobby = {
+        const lobby = {
 	  code,
 	  participants: new Map(),
 	  reaper: null,
 	  mapBuffer: null,
 	  mapVersion: 0,
 
-	  // ← НОВОЕ: игровое состояние лобби
-	  host: null,                    // username первого подключившегося (SSE)
-	  started: false,                // кто-то нажал «Старт»
-	  history: [],                   // history[i] — состояние после (i+1)-го хода
-	  currentTurn: 0,                // === history.length
-	  ordersByUser: new Map(),       // username → Order[]
-	  ready: new Set(),              // username'ы, нажавшие «Готов»
-	  resolving: false,              // ход разрешается хостом
+	  host: null,
+	  started: false,
+	  history: [],
+	  currentTurn: 0,
+	  ordersByUser: new Map(),
+	  ready: new Set(),
+	  resolving: false,
 	  gameOver: false,
+
+	  countriesByUser: new Map(),
 	};
 
     lobby.reaper = setTimeout(() => {
@@ -487,6 +498,53 @@ if (method === "GET" && mapMatch) {
     },
   });
 }
+
+// ---------- POST /lobby/:code/country — выбор страны ---------- // ← НОВОЕ
+const countryMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/country$/);
+if (method === "POST" && countryMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = countryMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (!lobby.participants.has(username)) {
+    return json({ error: "Вы не участник этого лобби" }, 403);
+  }
+  if (lobby.started) return json({ error: "Игра уже началась" }, 409);
+  if (lobby.gameOver) return json({ error: "Игра завершена" }, 409);
+
+  const body = await parseBody(req);
+  const raw = body.tileId;
+
+  // tileId === null / undefined → снять выбор
+  if (raw === null || raw === undefined) {
+    lobby.countriesByUser.delete(username);
+    broadcastCountries(lobby);
+    return json({ success: true, tileId: null });
+  }
+
+  const tileId = Number(raw);
+  if (!Number.isInteger(tileId) || tileId < 0) {
+    return json({ error: "Некорректный tileId" }, 400);
+  }
+
+  // Проверка уникальности (сервер не знает info.colors.length — клиент
+  // может прислать out-of-range tileId; это отсеют другие клиенты при
+  // рендере. Валидацию диапазона сервер не делает — карта ему не парсится).
+  for (const [u, t] of lobby.countriesByUser) {
+    if (u !== username && t === tileId) {
+      return json({ error: "Эта страна уже выбрана другим игроком" }, 409);
+    }
+  }
+
+  lobby.countriesByUser.set(username, tileId);
+  broadcastCountries(lobby);
+  return json({ success: true, tileId });
+}
+
 
 // ---------- POST /lobby/:code/start — старт игры ---------- // ← НОВОЕ
 const startMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/start$/);
@@ -719,37 +777,50 @@ if (method === "POST" && ordersMatch) {
       },
 
       cancel() {
-	    if (this._heartbeat) clearInterval(this._heartbeat);
+        if (this._heartbeat) clearInterval(this._heartbeat);
+
+        const set = lobby.participants.get(username);
+        if (!set) return;
+        set.delete(controllerRef);
+
+        // Пока у пользователя есть другие открытые соединения — он ещё в лобби.
+        if (set.size > 0) return;
+        lobby.participants.delete(username);
+
+        // ← НОВОЕ: освобождаем страну ушедшего игрока, чтобы её мог
+        // выбрать кто-то другой (до старта игры).
+        lobby.countriesByUser.delete(username);
+
+        // ← hostChanged: отдельное событие, не только через participants
+        if (lobby.host === username && !lobby.gameOver) {
+          const remaining = [...lobby.participants.keys()];
+          lobby.host = remaining[0] ?? null;
+          sendEvent(lobby, { type: 'hostChanged', host: lobby.host });
+        }
+
+        if (lobby.participants.size === 0) {
+          // Игра началась — не убиваем лобби сразу,
+          // даём TTL на переподключение.
+          if (lobby.started && !lobby.gameOver) {
+            if (!lobby.reaper) {
+              lobby.reaper = setTimeout(() => {
+                const l = lobbies.get(code);
+                if (l && l.participants.size === 0) destroyLobby(code);
+              }, EMPTY_LOBBY_TTL_MS);
+              if (lobby.reaper.unref) lobby.reaper.unref();
+            }
+          } else {
+            destroyLobby(code);
+          }
+          return;
+        }
+
+        // broadcastLobby включает `countries` — клиент увидит,
+        // что страна освободилась.
+        broadcastLobby(lobby);
+      },
 	  
-	    const set = lobby.participants.get(username);
-	    if (!set) return;
-	    set.delete(controllerRef);
-	    if (set.size === 0) lobby.participants.delete(username);
 	  
-	    // ← hostChanged: отдельное событие, не только через participants
-	    const wasHost = lobby.host === username;
-	    if (wasHost && !lobby.gameOver) {
-	  	const remaining = [...lobby.participants.keys()];
-	  	lobby.host = remaining[0] ?? null;
-	  	sendEvent(lobby, { type: 'hostChanged', host: lobby.host });
-	    }
-	  
-	    if (lobby.participants.size === 0) {
-	  	if (lobby.started && !lobby.gameOver) {
-	  	  if (!lobby.reaper) {
-	  		lobby.reaper = setTimeout(() => {
-	  		  const l = lobbies.get(code);
-	  		  if (l && l.participants.size === 0) destroyLobby(code);
-	  		}, EMPTY_LOBBY_TTL_MS);
-	  		if (lobby.reaper.unref) lobby.reaper.unref();
-	  	  }
-	  	} else {
-	  	  destroyLobby(code);
-	  	}
-	    } else {
-	  	broadcastLobby(lobby);
-	    }
-	  },
     });
 
     return new Response(stream, {
