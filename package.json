@@ -7,7 +7,17 @@
     "start": "bun run server/server.js",
     "start:prod": "NODE_ENV=production bun run server/server.js",
     "build": "bun build server/server.js --compile --outfile server/server",
-    "build:prod": "NODE_ENV=production bun build server/server.js --compile --outfile server/server"
+    "build:prod": "NODE_ENV=production bun build server/server.js --compile --outfile server/server",
+    "build:client:lobby": "esbuild client/lobby/lobby.ts --bundle --outfile=client/lobby/lobby.bundle.js --format=esm --sourcemap",
+    "build:client:game": "esbuild client/game/game.ts  --bundle --outfile=client/game/game.bundle.js  --format=esm --sourcemap",
+    "build:client": "npm run build:client:lobby && npm run build:client:game",
+    "typecheck:client": "tsc -p client/tsconfig.json --noEmit"
   },
-  "dependencies": {}
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "jszip": "^3.10.2"
+  }
 }

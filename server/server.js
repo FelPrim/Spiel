@@ -1,4 +1,8 @@
 // server.js — Bun + HTTP/3
+
+/** @typedef {import('../shared/protocol').SseEvent} SseEvent */
+/** @typedef {import('../shared/protocol').OrdersRequest} OrdersRequest */
+
 import { file, write } from "bun";
 import { readFileSync, existsSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
