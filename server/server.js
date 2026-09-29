@@ -719,37 +719,37 @@ if (method === "POST" && ordersMatch) {
       },
 
       cancel() {
-        if (this._heartbeat) clearInterval(this._heartbeat);
-
-        const set = lobby.participants.get(username);
-        if (!set) return;
-        set.delete(controllerRef);
-        if (set.size === 0) lobby.participants.delete(username);
-
-        // ← НОВОЕ: смена хоста при отключении
-        if (lobby.host === username && !lobby.gameOver) {
-          const remaining = [...lobby.participants.keys()];
-          lobby.host = remaining[0] ?? null;
-        }
-
-        if (lobby.participants.size === 0) {
-          // ← НОВОЕ: если игра началась — не убиваем лобби сразу,
-          // даём TTL на переподключение.
-          if (lobby.started && !lobby.gameOver) {
-            if (!lobby.reaper) {
-              lobby.reaper = setTimeout(() => {
-                const l = lobbies.get(code);
-                if (l && l.participants.size === 0) destroyLobby(code);
-              }, EMPTY_LOBBY_TTL_MS);
-              if (lobby.reaper.unref) lobby.reaper.unref();
-            }
-          } else {
-            destroyLobby(code);
-          }
-        } else {
-          broadcastLobby(lobby);
-        }
-      },
+	    if (this._heartbeat) clearInterval(this._heartbeat);
+	  
+	    const set = lobby.participants.get(username);
+	    if (!set) return;
+	    set.delete(controllerRef);
+	    if (set.size === 0) lobby.participants.delete(username);
+	  
+	    // ← hostChanged: отдельное событие, не только через participants
+	    const wasHost = lobby.host === username;
+	    if (wasHost && !lobby.gameOver) {
+	  	const remaining = [...lobby.participants.keys()];
+	  	lobby.host = remaining[0] ?? null;
+	  	sendEvent(lobby, { type: 'hostChanged', host: lobby.host });
+	    }
+	  
+	    if (lobby.participants.size === 0) {
+	  	if (lobby.started && !lobby.gameOver) {
+	  	  if (!lobby.reaper) {
+	  		lobby.reaper = setTimeout(() => {
+	  		  const l = lobbies.get(code);
+	  		  if (l && l.participants.size === 0) destroyLobby(code);
+	  		}, EMPTY_LOBBY_TTL_MS);
+	  		if (lobby.reaper.unref) lobby.reaper.unref();
+	  	  }
+	  	} else {
+	  	  destroyLobby(code);
+	  	}
+	    } else {
+	  	broadcastLobby(lobby);
+	    }
+	  },
     });
 
     return new Response(stream, {
