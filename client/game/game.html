@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Игра</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' font-family='Times New Roman, Times, serif' font-size='100' fill='black' text-anchor='middle' dominant-baseline='central'%3ES%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="game.css">
+</head>
+<body>
+    <video src="../climbing.webm" id="bg" autoplay loop muted playsinline preload="auto"></video>
+
+    <div id="sidebar">
+        <div id="turn-info">
+            Ход: <span id="turn-number">—</span>
+        </div>
+
+        <div id="country-info">
+            <div id="country-name">—</div>
+            <div id="country-treasury">Казна: —</div>
+            <div id="country-tiles">Провинций: —</div>
+        </div>
+
+        <div id="participants-panel">
+            <div id="participants-count-line">
+                Участники (<span id="participants-count">0</span>)
+            </div>
+            <ul id="participants-list"></ul>
+        </div>
+
+        <div id="afk-panel">
+            <button id="afk-toggle" type="button">АФК</button>
+        </div>
+
+        <div id="orders-panel">
+            <div id="orders-header">Приказы</div>
+            <ul id="orders-list"></ul>
+            <div id="orders-buttons">
+                <button id="order-buy-btn" type="button">Купить войска</button>
+            </div>
+            <div id="orders-hint">
+                Кликните свой тайл, затем соседний — чтобы добавить движение.
+            </div>
+        </div>
+
+        <div id="ready-bar">
+            <button id="ready-btn" type="button">Готов</button>
+        </div>
+
+        <!-- Заглушка для будущих этапов -->
+        <div id="history-scrubber" hidden></div>
+    </div>
+
+    <a href="../index.html" id="back-to-main">На главную</a>
+
+    <div id="viewport">
+        <div id="map-display"></div>
+    </div>
+
+    <div id="map-status"></div>
+
+    <div id="order6-modal" class="order-modal" hidden>
+        <div class="order-modal-overlay" id="order6-overlay"></div>
+        <div class="order-modal-box">
+            <div class="modal-title" id="order6-title">Движение</div>
+            <div class="modal-subtitle" id="order6-max">—</div>
+            <label class="modal-field">
+                Пехота:
+                <input type="text" inputmode="numeric" autocomplete="off"
+                       id="order6-inf" value="0">
+            </label>
+            <label class="modal-field">
+                Пушки:
+                <input type="text" inputmode="numeric" autocomplete="off"
+                       id="order6-can" value="0">
+            </label>
+            <div class="modal-buttons">
+                <button id="order6-ok" class="modal-ok" type="button">OK</button>
+                <button id="order6-cancel" type="button">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="order-buy-modal" class="order-modal" hidden>
+        <div class="order-modal-overlay" id="order-buy-overlay"></div>
+        <div class="order-modal-box">
+            <div class="modal-title">Покупка войск</div>
+            <div class="modal-subtitle" id="order-buy-budget">—</div>
+            <label class="modal-field">
+                Пехота (1 ед.):
+                <input type="text" inputmode="numeric" autocomplete="off"
+                       id="order-buy-inf" value="0">
+            </label>
+            <label class="modal-field">
+                Пушки (3 ед.):
+                <input type="text" inputmode="numeric" autocomplete="off"
+                       id="order-buy-can" value="0">
+            </label>
+            <div class="modal-cost" id="order-buy-cost">Итого: 0 ед.</div>
+            <div class="modal-buttons">
+                <button id="order-buy-ok" type="button">OK</button>
+                <button id="order-buy-cancel" type="button">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="game.bundle.js"></script>
+</body>
+</body>
+</html>

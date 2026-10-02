@@ -1,0 +1,351 @@
+/* client/game/game.css */
+
+#bg {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+    z-index: -1;
+    filter: brightness(0.4);
+}
+
+#sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 260px;
+    height: 100vh;
+    padding: 12px;
+    box-sizing: border-box;
+    background: rgba(20, 20, 20, 0.75);
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    overflow-y: auto;
+    z-index: 10;
+}
+
+#turn-info {
+    font-size: 16px;
+    margin-bottom: 12px;
+}
+
+#country-info {
+    margin-top: 12px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+#country-name {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+#participants-panel {
+    margin-top: 16px;
+    font-size: 14px;
+}
+
+#participants-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 4px 0 0 0;
+}
+
+#participants-list li {
+    padding: 2px 0;
+}
+
+#viewport {
+    position: fixed;
+    top: 0;
+    left: 260px;
+    width: calc(100vw - 260px);
+    height: 100vh;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+#map-display {
+    position: relative;
+    transform-origin: 0 0;
+    will-change: transform;
+}
+
+#map-status {
+    position: fixed;
+    bottom: 8px;
+    left: 268px;
+    padding: 4px 10px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    border-radius: 4px;
+    font-size: 13px;
+    pointer-events: none;
+    z-index: 20;
+}
+
+#back-to-main {
+    position: fixed;
+    bottom: 8px;
+    right: 8px;
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 13px;
+    z-index: 20;
+}
+#afk-panel {
+    margin-top: 12px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+}
+
+#afk-toggle {
+    width: 100%;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+#afk-toggle:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+#afk-toggle.active {
+    background: rgba(200, 80, 80, 0.5);
+    border-color: rgba(255, 120, 120, 0.7);
+}
+
+#afk-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#participants-list li.afk {
+    opacity: 0.6;
+    font-style: italic;
+}
+/* ============ Orders panel + ready bar (7.2) ============ */
+
+#orders-panel {
+    margin-top: 12px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+#orders-header {
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+
+#orders-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0 0 6px 0;
+}
+
+#orders-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 0;
+}
+
+#orders-list li.orders-empty {
+    opacity: 0.5;
+    font-style: italic;
+}
+
+#orders-list li button {
+    background: rgba(200, 80, 80, 0.5);
+    color: #fff;
+    border: 1px solid rgba(255, 120, 120, 0.7);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 2px 6px;
+}
+
+#orders-list li button:hover {
+    background: rgba(200, 80, 80, 0.75);
+}
+
+#orders-buttons {
+    margin: 6px 0;
+}
+
+#orders-buttons button {
+    width: 100%;
+    padding: 5px 10px;
+    background: rgba(80, 120, 200, 0.35);
+    color: #fff;
+    border: 1px solid rgba(120, 160, 240, 0.6);
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+#orders-buttons button:hover:not(:disabled) {
+    background: rgba(80, 120, 200, 0.55);
+}
+
+#orders-panel.locked #orders-buttons button {
+    display: none;
+}
+
+#orders-hint {
+    font-size: 12px;
+    opacity: 0.6;
+    line-height: 1.3;
+}
+
+#orders-panel.locked #orders-hint {
+    opacity: 0.35;
+}
+
+#orders-panel.locked #orders-list li button {
+    display: none;
+}
+
+#ready-bar {
+    margin-top: 12px;
+}
+
+#ready-btn {
+    width: 100%;
+    padding: 8px 10px;
+    background: rgba(80, 160, 80, 0.4);
+    color: #fff;
+    border: 1px solid rgba(120, 220, 120, 0.6);
+    border-radius: 4px;
+    font-size: 15px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+#ready-btn:hover:not(:disabled) {
+    background: rgba(80, 160, 80, 0.6);
+}
+
+#ready-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+    background: rgba(80, 160, 80, 0.25);
+}
+
+/* ============ Order modals (7.2) ============ */
+
+.order-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+}
+
+.order-modal[hidden] {
+    display: none;
+}
+
+.order-modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.order-modal-box {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(30, 30, 30, 0.95);
+    color: #fff;
+    padding: 16px 20px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    min-width: 260px;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+}
+
+.order-modal-box .modal-title {
+    font-weight: bold;
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+
+.order-modal-box .modal-subtitle {
+    opacity: 0.7;
+    margin-bottom: 12px;
+}
+
+.order-modal-box .modal-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 10px;
+}
+
+.order-modal-box .modal-field input {
+    width: 80px;
+    padding: 4px 6px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.order-modal-box .modal-cost {
+    text-align: right;
+    opacity: 0.8;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+.order-modal-box .modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.order-modal-box .modal-buttons button {
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.order-modal-box .modal-buttons button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.order-modal-box .modal-buttons .modal-ok {
+    background: rgba(80, 160, 80, 0.5);
+    border-color: rgba(120, 220, 120, 0.7);
+}
+
+.order-modal-box .modal-buttons .modal-ok:hover {
+    background: rgba(80, 160, 80, 0.7);
+}

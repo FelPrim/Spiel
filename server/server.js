@@ -87,6 +87,18 @@ function sseFormat(event) {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
+/** Является ли username членом лобби: либо открытый SSE, либо (после старта)
+ *  закреплённая за ним страна. */
+function isLobbyMember(lobby, username) {
+  if (lobby.participants.has(username)) return true;
+  if (lobby.started) {
+    for (const u of lobby.playersByCountryIdx.values()) {
+      if (u === username) return true;
+    }
+  }
+  return false;
+}
+
 /** Шлёт событие всем участникам лобби. */
 function sendEvent(lobby, event) {
   const payload = sseFormat(event);
@@ -123,6 +135,7 @@ function broadcastLobby(lobby) {
     type: 'participants',
     participants: getLobbyNames(lobby),
     host: lobby.host,
+    afk: [...lobby.afk],
   });
   sendEvent(lobby, {
     type: 'mapVersion',
@@ -130,15 +143,33 @@ function broadcastLobby(lobby) {
   });
   sendEvent(lobby, {
     type: 'countries',
-    countries: Object.fromEntries(lobby.countriesByUser),
+    countries: Array.from(lobby.countriesByUser),   // ← было Object.fromEntries
   });
 }
 
 function broadcastCountries(lobby) {
   sendEvent(lobby, {
     type: 'countries',
-    countries: Object.fromEntries(lobby.countriesByUser),
+    countries: Array.from(lobby.countriesByUser),   // ← было Object.fromEntries
   });
+}
+
+/** Центральная проверка «все готовы». AFK-игроки не блокируют. */
+function checkAllReady(lobby) {
+  if (!lobby.started || lobby.resolving || lobby.gameOver) return;
+  if (lobby.participants.size === 0) return;
+  for (const username of lobby.participants.keys()) {
+    if (lobby.afk.has(username)) continue;
+    if (lobby.ready.has(username)) continue;
+    return;
+  }
+  lobby.resolving = true;
+  const allReadyEvent = { type: 'allReady', turn: lobby.currentTurn + 1 };
+  if (lobby.host) {
+    sendEventToUser(lobby, lobby.host, allReadyEvent);
+  } else {
+    sendEvent(lobby, allReadyEvent);
+  }
 }
 
 function destroyLobby(code) {
@@ -283,8 +314,8 @@ async function handleRequest(req) {
 	  pathname === "/me" ||
 	  pathname === "/logout" ||
 	  pathname === "/lobby" ||
-	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map|start|state|orders|country)$/.test(pathname);
-
+	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map|start|state|orders|country|whoami|afk)$/.test(pathname);
+	  
   if (!isApi) {
     if (pathname === "/video.webm") {
 	  const f = file(join(DATA_DIR, "video.webm"));
@@ -410,6 +441,8 @@ if (method === "GET" && pathname === "/me") {
 	  gameOver: false,
 
 	  countriesByUser: new Map(),
+	  playersByCountryIdx: new Map(),
+	  afk: new Set(),
 	};
 
     lobby.reaper = setTimeout(() => {
@@ -493,7 +526,7 @@ if (method === "GET" && mapMatch) {
     headers: {
       "Content-Type": "application/octet-stream",
       "Content-Length": String(lobby.mapBuffer.byteLength),
-      "Cache-Control": "no-store",
+      "Cache-Control": "private, max-age=86400",
       "X-Map-Version": String(lobby.mapVersion),
     },
   });
@@ -547,6 +580,7 @@ if (method === "POST" && countryMatch) {
 
 
 // ---------- POST /lobby/:code/start — старт игры ---------- // ← НОВОЕ
+// ---------- POST /lobby/:code/start ----------
 const startMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/start$/);
 if (method === "POST" && startMatch) {
   const session = await requireAuth(req);
@@ -560,29 +594,65 @@ if (method === "POST" && startMatch) {
   if (!lobby.participants.has(username)) {
     return json({ error: "Вы не участник этого лобби" }, 403);
   }
+  if (lobby.host !== username) {
+    return json({ error: "Только хост может начать игру" }, 403);
+  }
   if (lobby.started) return json({ error: "Игра уже началась" }, 409);
   if (lobby.gameOver) return json({ error: "Игра завершена" }, 409);
   if (!lobby.mapBuffer) {
     return json({ error: "Карта ещё не загружена" }, 409);
   }
 
-  // На случай, если по какой-то причине никто не зашёл через SSE
-  // (например, curl-тест) — назначаем инициатора хостом.
-  if (!lobby.host) lobby.host = username;
+  const body = await parseBody(req);
+  const state = body.state;
+  if (!looksLikeState(state) || typeof state.turn !== "number") {
+    return json({ error: "Некорректное начальное состояние" }, 400);
+  }
+  if (state.turn !== 0) {
+    return json({ error: "Начальное состояние должно иметь turn=0" }, 400);
+  }
+
+  // Детерминированный порядок стран: сортировка по username.
+  // Тот же порядок клиент-хост использует при построении capitals[].
+  const selected = [...lobby.countriesByUser.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([u]) => u);
+
+  if (selected.length !== state.countries.length) {
+    return json({
+      error: `Выбрано стран ${selected.length}, а в состоянии ${state.countries.length}`,
+    }, 400);
+  }
+
+  lobby.playersByCountryIdx.clear();
+  for (let i = 0; i < selected.length; i++) {
+    lobby.playersByCountryIdx.set(i, selected[i]);
+  }
 
   lobby.started = true;
+  lobby.history = [state];
+  lobby.currentTurn = 0;
+  lobby.ordersByUser.clear();
+  lobby.ready.clear();
+  lobby.resolving = false;
 
-  sendPersonalized(lobby, (u) => ({
-    type: 'gameStart',
-    turn: 0,
-    youAreHost: u === lobby.host,
-  }));
-  sendEvent(lobby, { type: 'turnStarted', turn: 0 });
+  // Персональная рассылка gameStart
+  for (const [uname, conns] of lobby.participants) {
+    const event = {
+      type: "gameStart",
+      turn: 0,
+      youAreHost: uname === lobby.host,
+    };
+    const payload = `data: ${JSON.stringify(event)}\n\n`;
+    for (const c of conns) {
+      try { c.enqueue(payload); } catch { /* отвалился */ }
+    }
+  }
 
   return json({ success: true, turn: 0 });
 }
 
-// ---------- /lobby/:code/state — GET/POST состояния ---------- // ← НОВОЕ
+// ---------- /lobby/:code/state — GET/POST состояния ----------
 const stateMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/state$/);
 
 if (method === "GET" && stateMatch) {
@@ -594,7 +664,7 @@ if (method === "GET" && stateMatch) {
   if (!lobby) return json({ error: "Лобби не найдено" }, 404);
 
   const username = session.user.username;
-  if (!lobby.participants.has(username)) {
+  if (!isLobbyMember(lobby, username)) {
     return json({ error: "Вы не участник этого лобби" }, 403);
   }
 
@@ -681,7 +751,7 @@ if (method === "POST" && ordersMatch) {
   if (!lobby) return json({ error: "Лобби не найдено" }, 404);
 
   const username = session.user.username;
-  if (!lobby.participants.has(username)) {
+  if (!isLobbyMember(lobby, username)) {
     return json({ error: "Вы не участник этого лобби" }, 403);
   }
   if (!lobby.started) {
@@ -709,20 +779,70 @@ if (method === "POST" && ordersMatch) {
     ready,
   });
 
-  if (lobby.ready.size > 0 && lobby.ready.size === lobby.participants.size) {
-    lobby.resolving = true;
-    const allReadyEvent = {
-      type: 'allReady',
-      turn: lobby.currentTurn + 1,
-    };
-    if (lobby.host) {
-      sendEventToUser(lobby, lobby.host, allReadyEvent);
-    } else {
-      sendEvent(lobby, allReadyEvent);
-    }
-  }
+  checkAllReady(lobby);
 
   return json({ success: true, ready: lobby.ready.size });
+}
+
+// ---------- POST /lobby/:code/afk — переключение AFK ---------- // ← НОВОЕ (7.1)
+const afkMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/afk$/);
+if (method === "POST" && afkMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = afkMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (!lobby.participants.has(username)) {
+    return json({ error: "Вы не участник этого лобби" }, 403);
+  }
+  if (!lobby.started) {
+    return json({ error: "Игра ещё не началась" }, 409);
+  }
+  if (lobby.resolving) {
+    return json({ error: "Ход уже разрешается" }, 409);
+  }
+  if (lobby.gameOver) {
+    return json({ error: "Игра завершена" }, 409);
+  }
+
+  const body = await parseBody(req);
+  const wantAfk = body.afk === true;
+  if (wantAfk) lobby.afk.add(username);
+  else         lobby.afk.delete(username);
+
+  broadcastLobby(lobby);
+  checkAllReady(lobby);
+
+  return json({ success: true, afk: wantAfk });
+}
+
+// ---------- GET /lobby/:code/whoami ----------
+const whoamiMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/whoami$/);
+if (method === "GET" && whoamiMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = whoamiMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (!isLobbyMember(lobby, username)) {
+    return json({ error: "Вы не участник этого лобби" }, 403);
+  }
+
+  let yourCountryIdx = null;
+  for (const [idx, u] of lobby.playersByCountryIdx) {
+    if (u === username) { yourCountryIdx = idx; break; }
+  }
+
+  return json({
+    youAreHost: lobby.host === username,
+    yourCountryIdx,
+  });
 }
 
   // ---------- GET /lobby/:code/events (SSE) ----------
@@ -763,6 +883,7 @@ if (method === "POST" && ordersMatch) {
         }
 
         broadcastLobby(lobby);
+		checkAllReady(lobby);
 
         const heartbeat = setInterval(() => {
           try {
@@ -792,11 +913,11 @@ if (method === "POST" && ordersMatch) {
         lobby.countriesByUser.delete(username);
 
         // ← hostChanged: отдельное событие, не только через participants
-        if (lobby.host === username && !lobby.gameOver) {
-          const remaining = [...lobby.participants.keys()];
-          lobby.host = remaining[0] ?? null;
-          sendEvent(lobby, { type: 'hostChanged', host: lobby.host });
-        }
+        if (lobby.host === username && !lobby.gameOver && !lobby.started) {
+		  const remaining = [...lobby.participants.keys()];
+		  lobby.host = remaining[0] ?? null;
+		  sendEvent(lobby, { type: 'hostChanged', host: lobby.host });
+		}
 
         if (lobby.participants.size === 0) {
           // Игра началась — не убиваем лобби сразу,
@@ -818,6 +939,7 @@ if (method === "POST" && ordersMatch) {
         // broadcastLobby включает `countries` — клиент увидит,
         // что страна освободилась.
         broadcastLobby(lobby);
+		checkAllReady(lobby);
       },
 	  
 	  

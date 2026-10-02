@@ -7,5 +7,14 @@
   },
   "FelPrim": {
     "passwordHash": "$2b$10$Z3/WYotcmCav3gAtA69ul.G7396obwDMub5gh.h1ojmXCxlKbcUvK"
+  },
+  "alice": {
+    "passwordHash": "$2b$10$iStnTdFKP0tlU9Y5gCEjVukRVpLLhPVCRJgrsMcZHFKbTxmYhpJZ6"
+  },
+  "bob": {
+    "passwordHash": "$2b$10$RojwQRhpllA3LGj5.SQcHuQuGH2vrRmFkBCUEZZik/7UdX06Ixx4."
+  },
+  "eve": {
+    "passwordHash": "$2b$10$FOicYJy0QXkFhVYfi72OAeVH.xnCrkdej577LNbzJ26Il/pp83ME6"
   }
 }

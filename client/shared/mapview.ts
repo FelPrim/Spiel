@@ -34,15 +34,17 @@ export interface LoadedMapData {
     voronojCanvas: HTMLCanvasElement;
     voronojData32: Uint32Array;
     provinceIndices: Map<number, Uint32Array>;
+    tileCenters: Array<{ x: number; y: number }>;
     overlayCanvas: HTMLCanvasElement;
     overlayCtx: CanvasRenderingContext2D;
-    countryOverlayCanvas: HTMLCanvasElement;   // ← НОВОЕ
-    countryOverlayCtx: CanvasRenderingContext2D; // ← НОВОЕ
+    countryOverlayCanvas: HTMLCanvasElement;
+    countryOverlayCtx: CanvasRenderingContext2D;
+    armyOverlayCanvas: HTMLCanvasElement;
+    armyOverlayCtx: CanvasRenderingContext2D;
     info: MapInfo;
     selectedIndex: number;
     setSelection: (indices: Uint32Array | null) => void;
 }
-
 export type SelectionMode = 'none' | 'tile';
 export type TileClickHandler = (tileId: number | null) => void;
 export type StatusHandler = (text: string) => void;
@@ -206,7 +208,20 @@ export class MapView {
                 }
             }
 
+            const tileCenters: Array<{ x: number; y: number }> = [];
+            for (let i = 0; i < info.colors.length; i++) {
+                const rgb = info.colors[i]!;
+                const indices = provinceIndices.get(rgb);
+                if (!indices || indices.length === 0) {
+                    tileCenters.push({ x: -1, y: -1 });
+                    continue;
+                }
+                const b = boundsOf(indices, W);
+                tileCenters.push({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+            }
+
             const overlayCanvas = document.createElement('canvas');
+			
             overlayCanvas.id = 'map-overlay';
             overlayCanvas.width = W;
             overlayCanvas.height = H;
@@ -266,8 +281,21 @@ export class MapView {
             countryOverlayCanvas.style.top = '0';
             countryOverlayCanvas.style.left = '0';
             countryOverlayCanvas.style.pointerEvents = 'none';
+			
+			
             const countryOverlayCtx = countryOverlayCanvas.getContext('2d');
             if (!countryOverlayCtx) throw new Error('Не удалось получить 2D-контекст для country overlay');
+
+            const armyOverlayCanvas = document.createElement('canvas');
+            armyOverlayCanvas.id = 'map-army-overlay';
+            armyOverlayCanvas.width = W;
+            armyOverlayCanvas.height = H;
+            armyOverlayCanvas.style.position = 'absolute';
+            armyOverlayCanvas.style.top = '0';
+            armyOverlayCanvas.style.left = '0';
+            armyOverlayCanvas.style.pointerEvents = 'none';
+            const armyOverlayCtx = armyOverlayCanvas.getContext('2d');
+            if (!armyOverlayCtx) throw new Error('Не удалось получить 2D-контекст для army overlay');
 
             this.mapDisplay.innerHTML = '';
 
@@ -278,7 +306,10 @@ export class MapView {
             img.draggable = false;
             this.mapDisplay.appendChild(img);
             this.mapDisplay.appendChild(countryOverlayCanvas);
+            this.mapDisplay.appendChild(armyOverlayCanvas);
             this.mapDisplay.appendChild(overlayCanvas);
+			
+			
 
             this.loadedMapData = {
                 mapBlob,
@@ -288,10 +319,13 @@ export class MapView {
                 voronojCanvas,
                 voronojData32,
                 provinceIndices,
+                tileCenters,
                 overlayCanvas,
                 overlayCtx,
                 countryOverlayCanvas,
                 countryOverlayCtx,
+                armyOverlayCanvas,
+                armyOverlayCtx,
                 info,
                 selectedIndex: -1,
                 setSelection
@@ -380,6 +414,39 @@ export class MapView {
         }
 
         countryOverlayCtx.putImageData(imgData, 0, 0);
+    }
+
+
+    /**
+     * Отрисовать численность армий над провинциями.
+     * byTileId — Map<tileId, {inf, can}>. Пустые (0/0) тайлы пропускаются.
+     * Перерисовывает весь слой; координаты берутся из tileCenters.
+     */
+    setArmies(byTileId: Map<number, { inf: number; can: number }>): void {
+        const d = this.loadedMapData;
+        if (!d) return;
+        const { W, H, armyOverlayCtx, tileCenters, info } = d;
+
+        armyOverlayCtx.clearRect(0, 0, W, H);
+        if (byTileId.size === 0) return;
+
+        const FONT_PX = 32;
+        armyOverlayCtx.font = `bold ${FONT_PX}px sans-serif`;
+        armyOverlayCtx.textAlign = 'center';
+        armyOverlayCtx.textBaseline = 'middle';
+        armyOverlayCtx.lineWidth = 5;
+        armyOverlayCtx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+        armyOverlayCtx.fillStyle = '#ffffff';
+
+        for (const [tileId, { inf, can }] of byTileId) {
+            if (inf === 0 && can === 0) continue;
+            if (!Number.isInteger(tileId) || tileId < 0 || tileId >= info.colors.length) continue;
+            const c = tileCenters[tileId];
+            if (!c || c.x < 0) continue;
+            const text = `${inf} / ${can}`;
+            armyOverlayCtx.strokeText(text, c.x, c.y);
+            armyOverlayCtx.fillText(text, c.x, c.y);
+        }
     }
 
     /** Alpha (0..255) для заливки стран. Единственное место для настройки. */
@@ -560,6 +627,17 @@ export class MapView {
 
     private handleKeyDown(e: KeyboardEvent): void {
         if (!this.loadedMapData) return;
+
+		// Не перехватываем клавиши, когда пользователь печатает в поле ввода:
+		// иначе Digit0/Equal/Minus/Arrow* ломают ввод чисел и перемещение курсора.
+		const t = e.target;
+		if (
+			t instanceof HTMLInputElement ||
+			t instanceof HTMLTextAreaElement ||
+			(t instanceof HTMLElement && t.isContentEditable)
+		) {
+			return;
+		}
 
         const STEP = 50;
         const ZOOM_STEP = 1.1;

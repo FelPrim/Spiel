@@ -71,6 +71,7 @@ const TREASURY_RETENTION = 0.8;
 const EPS = 1e-9;
 
 export const INITIAL_ECONOMY = 1000;
+export const INITIAL_TREASURY = 1000; 
 export const INITIAL_INFANTRY = 0;
 export const INITIAL_CANNONS = 0;
 
@@ -119,6 +120,138 @@ function supportCannonsTotal(g: ArmyGroup): number {
   for (const s of g.support) t += s.cannons;
   return t;
 }
+
+
+
+// =====================================================================
+// Initial state
+// =====================================================================
+
+export interface InitialStateParams {
+  tilecount: number;
+  neighbours: number[][];       // info.neighbours, индексы в [0, tilecount)
+  capitals: number[];           // capitals[i] = tileId столицы страны i
+  startingEconomy: number;
+  startingTreasury: number;
+  /**
+   * Опционально: tileId → countryIdx для не-столичных стартовых владений.
+   * Если не задано — используется { capitals[i]: i } для каждого i.
+   */
+  initialOwnership?: Map<number, number>;
+}
+
+export function createInitialState(params: InitialStateParams): GameState {
+  const { tilecount, neighbours, capitals, startingEconomy, startingTreasury } = params;
+
+  if (neighbours.length !== tilecount) {
+    throw new Error(
+      `createInitialState: neighbours.length=${neighbours.length} != tilecount=${tilecount}`,
+    );
+  }
+  const K = capitals.length;
+  if (K === 0) throw new Error('createInitialState: нет ни одной страны');
+
+  for (let i = 0; i < tilecount; i++) {
+    for (const j of neighbours[i]!) {
+      if (j < 0 || j >= tilecount) {
+        throw new Error(`createInitialState: neighbours[${i}] содержит ${j} вне диапазона`);
+      }
+      if (!neighbours[j]!.includes(i)) {
+        throw new Error(`createInitialState: neighbours не симметричны (${i} → ${j}, но не наоборот)`);
+      }
+    }
+  }
+
+  const ownership = new Map<number, number>();
+  if (params.initialOwnership) {
+    for (const [tileId, countryIdx] of params.initialOwnership) {
+      if (!Number.isInteger(tileId) || tileId < 0 || tileId >= tilecount) {
+        throw new Error(`createInitialState: initialOwnership[${tileId}] вне диапазона`);
+      }
+      if (!Number.isInteger(countryIdx) || countryIdx < 0 || countryIdx >= K) {
+        throw new Error(`createInitialState: initialOwnership value ${countryIdx} вне диапазона`);
+      }
+      ownership.set(tileId, countryIdx);
+    }
+  } else {
+    for (let i = 0; i < K; i++) {
+      const cap = capitals[i]!;
+      if (!Number.isInteger(cap) || cap < 0 || cap >= tilecount) {
+        throw new Error(`createInitialState: capitals[${i}]=${cap} вне диапазона`);
+      }
+      if (ownership.has(cap)) {
+        throw new Error(`createInitialState: столица ${cap} назначена двум странам`);
+      }
+      ownership.set(cap, i);
+    }
+  }
+
+  for (let i = 0; i < K; i++) {
+    if (ownership.get(capitals[i]!) !== i) {
+      throw new Error(
+        `createInitialState: столица страны ${i} (tileId=${capitals[i]}) не принадлежит ей`,
+      );
+    }
+  }
+
+  const tiles: Tile[] = [];
+  for (let i = 0; i < tilecount; i++) {
+    tiles.push({
+      id: i,
+      owner: null,
+      ownerprevmove: null,
+      neighbours: [],
+      economy: startingEconomy,
+      retreat_province: new Array(K).fill(null),
+      investments: 0,
+      defenders: null as unknown as ArmyGroup,
+      incoming: neighbours[i]!.map(() => null),
+      arrived:  neighbours[i]!.map(() => null),
+    });
+  }
+  for (let i = 0; i < tilecount; i++) {
+    tiles[i]!.neighbours = neighbours[i]!.map(j => tiles[j]!);
+  }
+
+  // прим. 1: вместо ручного конструирования ArmyGroup использую
+  // экспортированный createArmyGroup — семантика идентична,
+  // и меньше дублирования.
+  for (const tile of tiles) {
+    tile.defenders = createArmyGroup(tile);
+  }
+
+  const countries: Country[] = [];
+  for (let i = 0; i < K; i++) {
+    countries.push({
+      id: i,
+      capital: tiles[capitals[i]!]!,
+      treasury: startingTreasury,
+      tiles: [],
+      gifts: 0,
+    });
+  }
+
+  for (const [tileId, countryIdx] of ownership) {
+    tiles[tileId]!.owner = countries[countryIdx]!;
+  }
+  for (let i = 0; i < tilecount; i++) {
+    const c = tiles[i]!.owner;
+    if (c) c.tiles.push(tiles[i]!);
+  }
+
+  return {
+    turn: 0,
+    countriescount: K,
+    tilescount: tilecount,
+    tiles,
+    countries,
+  };
+}
+
+
+
+
+
 
 // =====================================================================
 // Order validation
@@ -1424,6 +1557,149 @@ export function fromJSON(json: SerializedGameState): GameState {
     tiles,
     countries,
   };
+}
+
+// =====================================================================
+// Order serialization (wire format)
+// =====================================================================
+//
+// Объекты Order ссылаются на Tile/Country, которые нельзя прогнать через
+// JSON.stringify (циклы: tile.neighbours, tile.owner, country.capital,
+// country.tiles …). Поэтому по сети Order ходит как набор id и
+// рехидратируется на стороне получателя в ЕГО граф объектов.
+
+export interface SerializedOrder {
+  type: 1 | 3 | 4 | 5 | 6 | 7 | 8;
+  owner: number;
+  // type 1
+  investments?: number;
+  tiles?: number[];
+  // type 3
+  recipient?: number;
+  gift?: number;
+  // type 4
+  infantry?: number;
+  cannons?: number;
+  // type 5
+  tile?: number;
+  retreat_province?: number;
+  // type 6, 7, 8
+  from?: number;
+  to?: number;            // type 6
+  target_from?: number;   // type 7
+  target_to?: number;     // type 7
+  target?: number;        // type 8
+}
+
+export function orderToJSON(o: Order): SerializedOrder {
+  const so: SerializedOrder = { type: o.type, owner: o.owner.id };
+  switch (o.type) {
+    case 1:
+      so.investments = o.investments;
+      so.tiles = o.tiles.map(t => t.id);
+      break;
+    case 3:
+      so.recipient = o.recipient.id;
+      so.gift = o.gift;
+      break;
+    case 4:
+      so.infantry = o.infantry;
+      so.cannons = o.cannons;
+      break;
+    case 5:
+      so.tile = o.tile.id;
+      so.retreat_province = o.retreat_province.id;
+      break;
+    case 6:
+      so.from = o.from.id;
+      so.to = o.to.id;
+      so.infantry = o.infantry;
+      so.cannons = o.cannons;
+      break;
+    case 7:
+      so.from = o.from.id;
+      so.target_from = o.target_from.id;
+      so.target_to = o.target_to.id;
+      so.infantry = o.infantry;
+      so.cannons = o.cannons;
+      break;
+    case 8:
+      so.from = o.from.id;
+      so.target = o.target.id;
+      so.infantry = o.infantry;
+      so.cannons = o.cannons;
+      break;
+  }
+  return so;
+}
+
+export function ordersToJSON(orders: Order[]): SerializedOrder[] {
+  return orders.map(orderToJSON);
+}
+
+export function orderFromJSON(so: SerializedOrder, state: GameState): Order | null {
+  const owner = state.countries[so.owner];
+  if (!owner) return null;
+  const t = (id: number | undefined): Tile | null => {
+    if (id == null) return null;
+    return state.tiles[id] ?? null;
+  };
+  switch (so.type) {
+    case 1: {
+      const rawTiles = so.tiles ?? [];
+      const tiles: Tile[] = [];
+      for (const id of rawTiles) {
+        const tile = state.tiles[id];
+        if (!tile) return null;
+        tiles.push(tile);
+      }
+      return { type: 1, owner, investments: so.investments ?? 0, tiles };
+    }
+    case 3: {
+      const recipient = state.countries[so.recipient ?? -1];
+      if (!recipient) return null;
+      return { type: 3, owner, recipient, gift: so.gift ?? 0 };
+    }
+    case 4:
+      return { type: 4, owner, infantry: so.infantry ?? 0, cannons: so.cannons ?? 0 };
+    case 5: {
+      const tile = t(so.tile);
+      const retreat = t(so.retreat_province);
+      if (!tile || !retreat) return null;
+      return { type: 5, owner, tile, retreat_province: retreat };
+    }
+    case 6: {
+      const from = t(so.from), to = t(so.to);
+      if (!from || !to) return null;
+      return { type: 6, owner, from, to,
+               infantry: so.infantry ?? 0, cannons: so.cannons ?? 0 };
+    }
+    case 7: {
+      const from = t(so.from);
+      const targetFrom = t(so.target_from);
+      const targetTo = t(so.target_to);
+      if (!from || !targetFrom || !targetTo) return null;
+      return { type: 7, owner, from, target_from: targetFrom, target_to: targetTo,
+               infantry: so.infantry ?? 0, cannons: so.cannons ?? 0 };
+    }
+    case 8: {
+      const from = t(so.from), target = t(so.target);
+      if (!from || !target) return null;
+      return { type: 8, owner, from, target,
+               infantry: so.infantry ?? 0, cannons: so.cannons ?? 0 };
+    }
+    default:
+      return null;
+  }
+}
+
+export function ordersFromJSON(list: SerializedOrder[], state: GameState): Order[] {
+  const out: Order[] = [];
+  for (const so of list) {
+    const o = orderFromJSON(so, state);
+    if (o) out.push(o);
+  }
+  return out;
 }
 
 // =====================================================================

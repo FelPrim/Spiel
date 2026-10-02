@@ -1,6 +1,11 @@
-// client/lobby/lobby.ts
 import { MapView } from '../shared/mapview';
 import type { SseEvent } from '../../shared/protocol';
+import {
+  createInitialState,
+  toJSON,
+  INITIAL_ECONOMY,
+  INITIAL_TREASURY,
+} from '../../shared/game';
 
 const LOBBY_CODE: string | null =
     new URLSearchParams(location.search).get('code') ||
@@ -26,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mapFileInput     = requireEl<HTMLInputElement>('map-file');
     const mapStatus        = requireEl<HTMLDivElement>('map-status');
     const pickCountryBtn   = requireEl<HTMLButtonElement>('selection-mode');
+	const startGameBtn     = requireEl<HTMLButtonElement>('start-game');
     const viewport         = requireEl<HTMLDivElement>('viewport');
 
     const mapView = new MapView(viewport);
@@ -33,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ================== Состояние лобби (клиентская копия) ==================
     let myUsername: string | null = null;
+	let lastHost: string | null = null;                // ← новое
     let lastParticipants: string[] = [];
     const countriesByUser = new Map<string, number>();   // username → tileId
     let pickingCountry = false;
@@ -74,17 +81,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+	function renderStartButton(): void {
+  if (myUsername == null || !lastParticipants.length) {
+    startGameBtn.style.display = '';
+    startGameBtn.disabled = true;
+    startGameBtn.textContent = 'Начать игру';
+    startGameBtn.title = '';
+    return;
+  }
+  if (myUsername !== lastHost) {
+    startGameBtn.style.display = 'none';
+    return;
+  }
+  startGameBtn.style.display = '';
+
+  const info = mapView.loadedMapData?.info;
+  if (!info) {
+    startGameBtn.disabled = true;
+    startGameBtn.textContent = 'Начать игру';
+    startGameBtn.title = 'Сначала загрузите карту';
+    return;
+  }
+
+  const missing = lastParticipants.filter(u => !countriesByUser.has(u));
+  if (missing.length > 0) {
+    startGameBtn.disabled = true;
+    startGameBtn.textContent = 'Начать игру';
+    startGameBtn.title = `Ждём выбора стран: ${missing.join(', ')}`;
+    return;
+  }
+
+  startGameBtn.disabled = false;
+  startGameBtn.textContent = 'Начать игру';
+  startGameBtn.title = '';
+}
+
     function repaintCountries(): void {
         const list = Array.from(countriesByUser.values()).map(tileId => ({ tileId }));
         mapView.setCountries(list);
     }
 
     // ================== Скачивание карты из лобби ==================
-    async function downloadAndApplyMap(): Promise<void> {
+    async function downloadAndApplyMap(version: number): Promise<void> {
         if (!LOBBY_CODE) return;
         mapStatus.textContent = 'Загрузка карты из лобби...';
         try {
-            const r = await fetch(`/lobby/${encodeURIComponent(LOBBY_CODE)}/map`);
+            const r = await fetch(`/lobby/${encodeURIComponent(LOBBY_CODE)}/map?v=${version}`);
             if (!r.ok) {
                 mapStatus.textContent = `Не удалось скачать карту: ${r.status}`;
                 return;
@@ -94,10 +136,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // Карта перерисована — восстановим оверлей стран и свотчи.
             repaintCountries();
             renderParticipants();
+			renderStartButton();
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             mapStatus.textContent = 'Ошибка скачивания: ' + msg;
-        }
+        }		
     }
 
     // ================== Выбор страны ==================
@@ -175,6 +218,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Если игра уже началась — сразу в игру, не подключаемся к SSE лобби.
+        try {
+            const r = await fetch(`/lobby/${encodeURIComponent(LOBBY_CODE)}/whoami`);
+            if (r.ok) {
+                const who = await r.json() as { yourCountryIdx: number | null };
+                if (who.yourCountryIdx !== null) {
+                    location.href = `../game/game.html?code=${LOBBY_CODE}`;
+                    return;
+                }
+            }
+        } catch {
+            // whoami не ответил — считаем, что игра не началась; SSE решит.
+        }
+
         eventSource = new EventSource(`/lobby/${encodeURIComponent(LOBBY_CODE)}/events`);
 
         eventSource.onmessage = (e: MessageEvent<string>) => {
@@ -189,29 +246,34 @@ document.addEventListener('DOMContentLoaded', () => {
             switch (data.type) {
                 case 'participants':
                     lastParticipants = data.participants;
+					lastHost = data.host;
                     renderParticipants();
+					renderStartButton(); 
                     break;
 
                 case 'mapVersion':
                     if (data.version !== lastMapVersion) {
                         lastMapVersion = data.version;
                         if (data.version > 0) {
-                            void downloadAndApplyMap();
+                            void downloadAndApplyMap(data.version);
                         }
                     }
                     break;
 
                 case 'countries': {
-                    countriesByUser.clear();
-                    for (const [u, t] of Object.entries(data.countries)) {
-                        countriesByUser.set(u, t);
-                    }
-                    repaintCountries();
-                    renderParticipants();
-                    break;
-                }
+					countriesByUser.clear();
+					for (const [u, t] of data.countries) {   // ← было Object.entries
+						countriesByUser.set(u, t);
+					}
+					repaintCountries();
+					renderParticipants();
+					renderStartButton();                     // ← новое
+					break;
+				}
 
-                case 'gameStart':
+				case 'gameStart':
+					location.href = `../game/game.html?code=${LOBBY_CODE}`;
+					break;
                 case 'turnStarted':
                 case 'ordersBatch':
                 case 'allReady':
@@ -243,6 +305,67 @@ document.addEventListener('DOMContentLoaded', () => {
     loadMapBtn.addEventListener('click', () => {
         mapFileInput.click();
     });
+
+	startGameBtn.addEventListener('click', async () => {
+	  if (!LOBBY_CODE) return;
+	  const info = mapView.loadedMapData?.info;
+	  if (!info) return;
+
+	  // прим. 3: тот же порядок, что и на сервере в /start — сортировка
+	  // по username. Гарантирует совпадение capitals[i] ↔ countryIdx=i.
+	  const selected = [...countriesByUser.entries()]
+		.sort((a, b) => a[0].localeCompare(b[0]));
+	  const capitals = selected.map(([, tileId]) => tileId);
+
+	  if (capitals.length === 0) return;
+
+	  const tilecount = info.tilecount as number;
+	  const neighbours = info.neighbours as number[][];
+
+	  let state;
+	  try {
+		state = createInitialState({
+		  tilecount,
+		  neighbours,
+		  capitals,
+		  startingEconomy: INITIAL_ECONOMY,
+		  startingTreasury: INITIAL_TREASURY,
+		});
+	  } catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		mapStatus.textContent = 'Ошибка построения состояния: ' + msg;
+		return;
+	  }
+
+	  startGameBtn.disabled = true;
+	  startGameBtn.textContent = 'Запуск...';
+
+	  try {
+		const r = await fetch(`/lobby/${encodeURIComponent(LOBBY_CODE)}/start`, {
+		  method: 'POST',
+		  headers: { 'Content-Type': 'application/json' },
+		  body: JSON.stringify({ state: toJSON(state) }),
+		});
+		if (!r.ok) {
+		  let msg = `Ошибка ${r.status}`;
+		  try {
+			const j = await r.json() as { error?: string };
+			if (j && j.error) msg = j.error;
+		  } catch { /* нет тела */ }
+		  mapStatus.textContent = msg;
+		  startGameBtn.disabled = false;
+		  startGameBtn.textContent = 'Начать игру';
+		}
+		// При успехе ждём gameStart по SSE.
+	  } catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		mapStatus.textContent = 'Ошибка сети: ' + msg;
+		startGameBtn.disabled = false;
+		startGameBtn.textContent = 'Начать игру';
+	  }
+	});
+
+
 
     // ================== Загрузка архива → отправка в лобби ==================
     mapFileInput.addEventListener('change', async () => {
