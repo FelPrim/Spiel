@@ -280,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'turnResult':
                 case 'hostChanged':
                 case 'historyInfo':
+                case 'renames':
                     // Лобби на игровые события пока не реагирует.
                     break;
 

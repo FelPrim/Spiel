@@ -186,27 +186,39 @@
 }
 
 #orders-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
     margin: 6px 0;
 }
 
 #orders-buttons button {
-    width: 100%;
-    padding: 5px 10px;
+    padding: 5px 6px;
     background: rgba(80, 120, 200, 0.35);
     color: #fff;
     border: 1px solid rgba(120, 160, 240, 0.6);
     border-radius: 3px;
-    font-size: 13px;
+    font-size: 11px;
+    line-height: 1.15;
     font-family: inherit;
     cursor: pointer;
+    text-align: center;
+    white-space: normal;
 }
 
 #orders-buttons button:hover:not(:disabled) {
     background: rgba(80, 120, 200, 0.55);
 }
 
-#orders-panel.locked #orders-buttons button {
-    display: none;
+#orders-buttons button.active {
+    background: rgba(80, 160, 80, 0.55);
+    border-color: rgba(120, 220, 120, 0.8);
+    font-weight: bold;
+}
+
+#orders-buttons button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 #orders-hint {
@@ -348,4 +360,56 @@
 
 .order-modal-box .modal-buttons .modal-ok:hover {
     background: rgba(80, 160, 80, 0.7);
+}
+
+/* ============ Turn view bar (7.3) ============ */
+
+#turn-view-bar {
+    position: fixed;
+    right: 24px;
+    bottom: 48px;
+    z-index: 30;
+    display: flex;
+    gap: 8px;
+}
+
+#turn-view-bar[hidden] {
+    display: none;
+}
+
+#turn-view-bar button {
+    padding: 10px 22px;
+    background: rgba(60, 120, 200, 0.9);
+    color: #fff;
+    border: 1px solid rgba(120, 180, 255, 0.8);
+    border-radius: 6px;
+    font-size: 15px;
+    font-family: system-ui, sans-serif;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+#turn-view-bar button:hover {
+    background: rgba(60, 120, 200, 1);
+}
+
+#turn-view-bar button[hidden] {
+    display: none;
+}
+
+/* Баннер «просмотр движения» в панели приказов */
+
+#orders-view-banner {
+    display: none;
+    margin: -8px -8px 8px -8px;
+    padding: 6px 10px;
+    background: rgba(60, 120, 200, 0.35);
+    border-bottom: 1px solid rgba(120, 180, 255, 0.5);
+    border-radius: 4px 4px 0 0;
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+#orders-panel.viewing-movement #orders-view-banner {
+    display: block;
 }

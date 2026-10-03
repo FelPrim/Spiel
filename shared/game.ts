@@ -367,7 +367,26 @@ export function validateOrders(state: GameState, orders: Order[]): Order[] {
 // Entry point
 // =====================================================================
 
-export function applyTurn(state: GameState, orders: Order[]): GameState {
+export interface ApplyTurnOptions {
+  /**
+   * Вызывается между фазой движения (шаг 6) и главной битвой (шаг 7).
+   * Состояние уже мутировано (движение разрешено, `ownerprevmove`
+   * переключён, экономика пересчитана), но:
+   *   - `turn` ещё не инкрементирован,
+   *   - битвы не разрешены,
+   *   - `Country.tiles` не перестроены,
+   *   - income не начислен.
+   * Вызывающий обязан немедленно снять копию: дальнейшие шаги applyTurn
+   * мутируют те же объекты.
+   */
+  onMovementPhase?: (state: GameState) => void;
+}
+
+export function applyTurn(
+  state: GameState,
+  orders: Order[],
+  options?: ApplyTurnOptions,
+): GameState {
   // 0. Silently drop structurally invalid or over-budget orders.
   const validOrders = validateOrders(state, orders);
 
@@ -511,6 +530,7 @@ export function applyTurn(state: GameState, orders: Order[]): GameState {
 
   // 6. Movement phase.
   resolveMovementPhase(state);
+  if (options?.onMovementPhase) options.onMovementPhase(state);
 
   // 7. Main battle phase.
   const pendingRetreats: RetreatPlan[] = [];

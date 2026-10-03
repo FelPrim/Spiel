@@ -145,6 +145,10 @@ function broadcastLobby(lobby) {
     type: 'countries',
     countries: Array.from(lobby.countriesByUser),   // ← было Object.fromEntries
   });
+  sendEvent(lobby, {
+    type: 'renames',
+    renames: Array.from(lobby.renames),
+  });
 }
 
 function broadcastCountries(lobby) {
@@ -314,7 +318,7 @@ async function handleRequest(req) {
 	  pathname === "/me" ||
 	  pathname === "/logout" ||
 	  pathname === "/lobby" ||
-	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map|start|state|orders|country|whoami|afk)$/.test(pathname);
+	  /^\/lobby\/[A-Za-z0-9]+\/(join|events|map|start|state|orders|country|whoami|afk|rename|history)$/.test(pathname);
 	  
   if (!isApi) {
     if (pathname === "/video.webm") {
@@ -434,6 +438,9 @@ if (method === "GET" && pathname === "/me") {
 	  host: null,
 	  started: false,
 	  history: [],
+	  historyOrders: [],
+	  movementStates: [],
+	  renames: new Map(),
 	  currentTurn: 0,
 	  ordersByUser: new Map(),
 	  ready: new Set(),
@@ -631,6 +638,9 @@ if (method === "POST" && startMatch) {
 
   lobby.started = true;
   lobby.history = [state];
+  lobby.historyOrders = [[]];
+  lobby.movementStates = [null];
+  lobby.renames = new Map();
   lobby.currentTurn = 0;
   lobby.ordersByUser.clear();
   lobby.ready.clear();
@@ -702,6 +712,9 @@ if (method === "POST" && stateMatch) {
   if (lobby.gameOver) {
     return json({ error: "Игра завершена" }, 409);
   }
+  if (!lobby.resolving) {
+    return json({ error: "Ход не в обработке" }, 409);
+  }
 
   const MAX_STATE_BYTES = 50 * 1024 * 1024;
   const declared = Number(req.headers.get("content-length") || 0);
@@ -714,14 +727,35 @@ if (method === "POST" && stateMatch) {
   if (!looksLikeState(state)) {
     return json({ error: "Некорректное состояние" }, 400);
   }
+  const appliedOrders = body.appliedOrders;
+  if (!Array.isArray(appliedOrders)) {
+    return json({ error: "appliedOrders обязателен" }, 400);
+  }
   if (state.turn !== lobby.currentTurn + 1) {
     return json({
       error: `Ожидался turn=${lobby.currentTurn + 1}, получен ${state.turn}`,
     }, 409);
   }
 
+  // movementState опционален: бывает null, если фаза движения не дала
+  // отдельного снимка (пустой ход, нет движений). Точную валидацию
+  // turn не делаем: снимок снимается до `state.turn += 1`, поэтому
+  // его turn может быть на 1 меньше. Проверяем только форму.
+  const movementState = body.movementState ?? null;
+  if (movementState !== null) {
+    if (!looksLikeState(movementState)) {
+      return json({ error: "Некорректный movementState" }, 400);
+    }
+    if (movementState.tilescount !== state.tilescount
+        || movementState.countriescount !== state.countriescount) {
+      return json({ error: "movementState не согласован с state" }, 400);
+    }
+  }
+
   lobby.history.push(state);
-  lobby.currentTurn = lobby.history.length;
+  lobby.historyOrders.push(appliedOrders);
+  lobby.movementStates.push(movementState ?? null);
+  lobby.currentTurn = state.turn;
   lobby.ordersByUser.clear();
   lobby.ready.clear();
   lobby.resolving = false;
@@ -730,15 +764,95 @@ if (method === "POST" && stateMatch) {
   sendEvent(lobby, {
     type: 'turnResult',
     turn: lobby.currentTurn,
+    movementState,
     state,
+    orders: appliedOrders,
   });
   sendEvent(lobby, {
     type: 'turnStarted',
-    turn: lobby.currentTurn,
+    turn: lobby.currentTurn + 1,
   });
 
   return json({ success: true, turn: lobby.currentTurn });
 }
+
+
+
+// ---------- GET /lobby/:code/history — полная история ходов ----------
+const historyMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/history$/);
+if (method === "GET" && historyMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = historyMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (!isLobbyMember(lobby, username)) {
+    return json({ error: "Вы не участник этого лобби" }, 403);
+  }
+
+  const entries = [];
+  for (let i = 0; i < lobby.history.length; i++) {
+    entries.push({
+      turn: lobby.history[i].turn,
+      movement: lobby.movementStates[i] ?? null,
+      final: lobby.history[i],
+      orders: lobby.historyOrders[i] ?? [],
+    });
+  }
+  return json({ entries });
+}
+
+// ---------- POST /lobby/:code/rename ----------
+const renameMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/rename$/);
+if (method === "POST" && renameMatch) {
+  const session = await requireAuth(req);
+  if (!session) return json({ error: "Не авторизован" }, 401);
+
+  const code = renameMatch[1].toUpperCase();
+  const lobby = lobbies.get(code);
+  if (!lobby) return json({ error: "Лобби не найдено" }, 404);
+
+  const username = session.user.username;
+  if (!isLobbyMember(lobby, username)) {
+    return json({ error: "Вы не участник этого лобби" }, 403);
+  }
+  if (!lobby.started) {
+    return json({ error: "Игра ещё не началась" }, 409);
+  }
+
+  const body = await parseBody(req);
+  const tileId = Number(body.tileId);
+  const name = String(body.name ?? "");
+
+  const tilecount = lobby.history[0]?.tilescount ?? 0;
+  if (!Number.isInteger(tileId) || tileId < 0 || tileId >= tilecount) {
+    return json({ error: "Некорректный tileId" }, 400);
+  }
+  if (name.length > 40) {
+    return json({ error: "Имя слишком длинное (макс. 40)" }, 400);
+  }
+
+  const latest = lobby.history[lobby.history.length - 1];
+  const tile = latest?.tiles?.[tileId];
+  if (!tile) return json({ error: "Тайл не найден" }, 404);
+
+  let ownerIdx = null;
+  for (const [idx, u] of lobby.playersByCountryIdx) {
+    if (u === username) { ownerIdx = idx; break; }
+  }
+  if (ownerIdx === null) return json({ error: "У вас нет страны" }, 403);
+  if (tile.owner !== ownerIdx) return json({ error: "Только свои провинции" }, 403);
+
+  if (name === "") lobby.renames.delete(tileId);
+  else lobby.renames.set(tileId, name);
+  broadcastLobby(lobby);
+  return json({ success: true });
+}
+
+
 
 // ---------- POST /lobby/:code/orders — приказы игрока ---------- // ← НОВОЕ
 const ordersMatch = pathname.match(/^\/lobby\/([A-Za-z0-9]+)\/orders$/);
