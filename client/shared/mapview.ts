@@ -71,6 +71,13 @@ export function unionBounds(a: Bounds | null, b: Bounds | null): Bounds | null {
     return { x, y, w: x2 - x, h: y2 - y };
 }
 
+function parseHexColor(hex: string): { r: number; g: number; b: number } | null {
+    const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+    if (!m) return null;
+    const n = parseInt(m[1]!, 16);
+    return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
+}
+
 interface ViewState {
     scale: number;
     translateX: number;
@@ -103,6 +110,7 @@ export class MapView {
 
     private _tileClickCb: TileClickHandler | null = null;
     private _statusCb: StatusHandler | null = null;
+    private _cancelStepCb: (() => void) | null = null;
 
     private readonly _onPointerDown: (e: PointerEvent) => void;
     private readonly _onPointerMove: (e: PointerEvent) => void;
@@ -111,6 +119,7 @@ export class MapView {
     private readonly _onWheel: (e: WheelEvent) => void;
     private readonly _onDblClick: (e: MouseEvent) => void;
     private readonly _onKeyDown: (e: KeyboardEvent) => void;
+    private readonly _onContextMenu: (e: MouseEvent) => void;
 
     constructor(viewport: HTMLElement) {
         if (!viewport) throw new Error('MapView: viewport is required');
@@ -131,6 +140,7 @@ export class MapView {
         this._onWheel = this.handleWheel.bind(this);
         this._onDblClick = this.handleDblClick.bind(this);
         this._onKeyDown = this.handleKeyDown.bind(this);
+        this._onContextMenu = this.handleContextMenu.bind(this);
 
         viewport.addEventListener('pointerdown', this._onPointerDown);
         viewport.addEventListener('pointermove', this._onPointerMove);
@@ -138,6 +148,7 @@ export class MapView {
         viewport.addEventListener('pointercancel', this._onPointerCancel);
         viewport.addEventListener('wheel', this._onWheel, { passive: false });
         viewport.addEventListener('dblclick', this._onDblClick);
+        viewport.addEventListener('contextmenu', this._onContextMenu);
         window.addEventListener('keydown', this._onKeyDown);
 
         this.updateCursor();
@@ -328,6 +339,7 @@ export class MapView {
 
     onTileClick(cb: TileClickHandler): void { this._tileClickCb = cb; }
     onStatus(cb: StatusHandler): void { this._statusCb = cb; }
+    onCancelStep(cb: () => void): void { this._cancelStepCb = cb; }
 
     setSelectionMode(mode: SelectionMode): void {
         this.view.selectionMode = (mode === 'tile');
@@ -362,29 +374,44 @@ export class MapView {
         this.loadedMapData.selectedIndex = -1;
     }
 
-    /** Подсветить произвольный набор тайлов (multi-select). */
-    setHighlight(tileIds: number[]): void {
+        /**
+     * Подсветить набор тайлов несколькими цветными слоями. Слои рисуются
+     * в порядке массива: если тайл встречается в нескольких слоях, побеждает
+     * последний (перекрывает более ранние). Альфа — 60/255 для всех слоёв.
+     */
+    setHighlightLayers(layers: Array<{ tiles: number[]; color: string }>): void {
         const d = this.loadedMapData;
         if (!d) return;
         const { W, H, highlightOverlayCtx, provinceIndices, info } = d;
         highlightOverlayCtx.clearRect(0, 0, W, H);
-        if (tileIds.length === 0) return;
+        if (layers.length === 0) return;
         const img = highlightOverlayCtx.createImageData(W, H);
         const data = img.data;
-        for (const id of tileIds) {
-            if (!Number.isInteger(id) || id < 0 || id >= info.colors.length) continue;
-            const rgb = info.colors[id];
-            const indices = provinceIndices.get(rgb);
-            if (!indices) continue;
-            for (let k = 0; k < indices.length; k++) {
-                const p = indices[k] * 4;
-                data[p] = 255;
-                data[p + 1] = 255;
-                data[p + 2] = 255;
-                data[p + 3] = 60;
+        let painted = false;
+        for (const layer of layers) {
+            const rgb = parseHexColor(layer.color);
+            if (!rgb) continue;
+            for (const id of layer.tiles) {
+                if (!Number.isInteger(id) || id < 0 || id >= info.colors.length) continue;
+                const tileRgb = info.colors[id];
+                const indices = provinceIndices.get(tileRgb);
+                if (!indices) continue;
+                painted = true;
+                for (let k = 0; k < indices.length; k++) {
+                    const p = indices[k]! * 4;
+                    data[p] = rgb.r;
+                    data[p + 1] = rgb.g;
+                    data[p + 2] = rgb.b;
+                    data[p + 3] = 60;
+                }
             }
         }
-        highlightOverlayCtx.putImageData(img, 0, 0);
+        if (painted) highlightOverlayCtx.putImageData(img, 0, 0);
+    }
+
+    /** Удобная обёртка: один цветной слой. По умолчанию — белый. */
+    setHighlight(tileIds: number[], color: string = '#ffffff'): void {
+        this.setHighlightLayers([{ tiles: tileIds, color }]);
     }
 
     clearHighlight(): void {
@@ -402,9 +429,10 @@ export class MapView {
         if (labels.size === 0) return;
 
         const fontSize = Math.max(14, Math.round(W / 40));
+        const LABEL_OFFSET = Math.round(fontSize / 2);
         labelOverlayCtx.font = `bold ${fontSize}px sans-serif`;
         labelOverlayCtx.textAlign = 'center';
-        labelOverlayCtx.textBaseline = 'middle';
+        labelOverlayCtx.textBaseline = 'bottom';
         labelOverlayCtx.lineWidth = Math.max(2, fontSize / 7);
         labelOverlayCtx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
         labelOverlayCtx.fillStyle = '#ffffff';
@@ -419,8 +447,9 @@ export class MapView {
                 if (!c || c.x < 0) continue;
                 x = c.x; y = c.y;
             }
-            labelOverlayCtx.strokeText(name, x, y);
-            labelOverlayCtx.fillText(name, x, y);
+            const labelY = y - LABEL_OFFSET;
+            labelOverlayCtx.strokeText(name, x, labelY);
+            labelOverlayCtx.fillText(name, x, labelY);
         }
     }
 
@@ -474,15 +503,24 @@ export class MapView {
         const circleFontSize = FONT_PX * CIRCLE_SCALE;
         const triangleFontSize = FONT_PX * TRIANGLE_SCALE;
         const circleNudge = -circleFontSize * 0.06;
+        const ARMY_OFFSET = Math.round(FONT_PX / 2);
 
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
 
+        const pts = info.points;
         for (const [tileId, { inf, can, color }] of byTileId) {
             if (inf === 0 && can === 0) continue;
             if (!Number.isInteger(tileId) || tileId < 0 || tileId >= info.colors.length) continue;
-            const c = tileCenters[tileId];
-            if (!c || c.x < 0) continue;
+
+            let cx: number | null = null, baseY: number | null = null;
+            if (pts && pts[tileId]) { cx = pts[tileId]!.x; baseY = pts[tileId]!.y; }
+            if (cx == null || baseY == null) {
+                const c = tileCenters[tileId];
+                if (!c || c.x < 0) continue;
+                cx = c.x; baseY = c.y;
+            }
+            const cy = baseY + ARMY_OFFSET;
 
             const fill = color ?? '#222';
             const infStr = String(inf);
@@ -500,34 +538,34 @@ export class MapView {
             const wTriangle = ctx.measureText('▲').width;
 
             const totalW = wCircle + wInf + wSlash + wTriangle + wCan;
-            let x = c.x - totalW / 2;
+            let x = cx - totalW / 2;
 
             // ● — цвет страны, со сдвигом вверх (circleNudge)
             ctx.font = `${circleFontSize}px sans-serif`;
             ctx.fillStyle = fill;
-            ctx.fillText('●', x, c.y + circleNudge);
+            ctx.fillText('●', x, cy + circleNudge);
             x += wCircle;
 
             // inf — тёмно-серый, как в подписях стрелок
             ctx.font = `${FONT_PX}px sans-serif`;
             ctx.fillStyle = '#222';
-            ctx.fillText(infStr, x, c.y);
+            ctx.fillText(infStr, x, cy);
             x += wInf;
 
             // " / "
-            ctx.fillText(slashStr, x, c.y);
+            ctx.fillText(slashStr, x, cy);
             x += wSlash;
 
             // ▲ — цвет страны
             ctx.font = `${triangleFontSize}px sans-serif`;
             ctx.fillStyle = fill;
-            ctx.fillText('▲', x, c.y);
+            ctx.fillText('▲', x, cy);
             x += wTriangle;
 
             // can — тёмно-серый
             ctx.font = `${FONT_PX}px sans-serif`;
             ctx.fillStyle = '#222';
-            ctx.fillText(canStr, x, c.y);
+            ctx.fillText(canStr, x, cy);
         }
     }
 	static readonly COUNTRY_ALPHA = 160;
@@ -539,6 +577,7 @@ export class MapView {
         this.viewport.removeEventListener('pointercancel', this._onPointerCancel);
         this.viewport.removeEventListener('wheel', this._onWheel);
         this.viewport.removeEventListener('dblclick', this._onDblClick);
+        this.viewport.removeEventListener('contextmenu', this._onContextMenu);
         window.removeEventListener('keydown', this._onKeyDown);
         if (this.loadedMapData && this.loadedMapData.mapUrl) {
             URL.revokeObjectURL(this.loadedMapData.mapUrl);
@@ -696,6 +735,12 @@ export class MapView {
         if (!this.loadedMapData) return;
         e.preventDefault();
         this.fitToScreen();
+    }
+
+    private handleContextMenu(e: MouseEvent): void {
+        if (!this.loadedMapData) return;
+        e.preventDefault();
+        if (this._cancelStepCb) this._cancelStepCb();
     }
 
     private handleKeyDown(e: KeyboardEvent): void {

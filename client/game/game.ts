@@ -21,6 +21,7 @@ import type {
 import {
     clearArrows,
     drawArrow,
+    drawRetreat,
     drawSupportAttack,
     drawSupportDefense,
 } from './arrow';
@@ -55,6 +56,11 @@ const ordersListEl    = requireEl<HTMLUListElement>('orders-list');
 const readyBtn        = requireEl<HTMLButtonElement>('ready-btn');
 
 const ordersButtonsEl = requireEl<HTMLDivElement>('orders-buttons');
+
+const investStatusEl  = requireEl<HTMLDivElement>('invest-status');
+const investAmountEl  = requireEl<HTMLInputElement>('invest-amount');
+const investCountEl   = requireEl<HTMLSpanElement>('invest-count');
+const investClearEl   = requireEl<HTMLButtonElement>('invest-clear');
 
 const troopModal      = requireEl<HTMLDivElement>('troop-modal');
 const troopOverlayEl  = requireEl<HTMLDivElement>('troop-overlay');
@@ -93,6 +99,7 @@ const backBtn         = requireEl<HTMLButtonElement>('back-btn');
 const ordersHintEl    = requireEl<HTMLDivElement>('orders-hint');
 
 const orderBuyBtn     = requireEl<HTMLButtonElement>('order-buy-btn');
+const ordersResetBtn  = requireEl<HTMLButtonElement>('orders-reset-btn');
 const orderBuyModal   = requireEl<HTMLDivElement>('order-buy-modal');
 const orderBuyOverlay = requireEl<HTMLDivElement>('order-buy-overlay');
 const orderBuyBudgetEl= requireEl<HTMLDivElement>('order-buy-budget');
@@ -135,6 +142,20 @@ let activeMode: OrderMode = 'move';
 
 interface ModeSelection { tiles: number[]; }
 let modeSelection: ModeSelection = { tiles: [] };
+
+/**
+ * Persistent-выбор тайлов для инвестиций. НЕ сбрасывается при выходе из
+ * режима invest — только кнопкой «Очистить» или при `turnStarted`.
+ * На «Готов» превращается в Order 1.
+ */
+let investmentTiles: Set<number> = new Set();
+
+/** Цвета подсветки тайлов для пошаговых режимов. */
+const HL_GREEN     = '#22c55e';   // источник / from
+const HL_ORANGE    = '#f59e0b';   // промежуточная цель (target_from)
+const HL_RED       = '#ef4444';   // конечная цель (target_to / to)
+const HL_INVEST    = '#ffffff';   // выбранные тайлы для инвестиций (persistent)
+const HL_CANDIDATE = '#ffffff';   // «сюда можно кликнуть следующим шагом»
 
 /** Имена провинций: tileId → name. Обновляется по SSE `renames`. */
 let tileNames = new Map<number, string>();
@@ -266,7 +287,11 @@ function renderArrows(): void {
         const inf = o.infantry ?? 0;
         const can = o.cannons ?? 0;
 
-        if (o.type === 6) {
+        if (o.type === 5) {
+            const a = getP(o.tile), b = getP(o.retreat_province);
+            if (!a || !b) return;
+            drawRetreat(d.arrowOverlay, a.x, a.y, b.x, b.y, color);
+        } else if (o.type === 6) {
             if (inf === 0 && can === 0) return;
             const a = getP(o.from), b = getP(o.to);
             if (!a || !b) return;
@@ -287,16 +312,73 @@ function renderArrows(): void {
     // Живой ход (не история): рисуем стрелки текущих черновиков игрока.
     // Сюда же попадает случай, когда игрок нажал «Готов» — черновики
     // остаются видны до прихода turnResult.
+    //
+    // Order 5 персистентен: точка отступления хранится в состоянии и
+    // переживает ходы. Поэтому сначала собираем сохранённые точки
+    // отступления своей страны из currentState, затем накладываем
+    // черновики — они перекрывают сохранённое значение по тайлу-источнику.
     if (!isViewingHistory()) {
-        for (const o of pendingOrders) drawOne(orderToJSON(o));
+        const retreatByTile = new Map<number, SerializedOrder>();
+        const state = getDisplayState();
+        if (state && yourCountryIdx != null) {
+            for (const t of state.tiles) {
+                const rp = t.retreat_province[yourCountryIdx];
+                if (rp) {
+                    retreatByTile.set(t.id, {
+                        type: 5,
+                        owner: yourCountryIdx,
+                        tile: t.id,
+                        retreat_province: rp.id,
+                    });
+                }
+            }
+        }
+
+        const nonRetreatPending: SerializedOrder[] = [];
+        for (const o of pendingOrders) {
+            const so = orderToJSON(o);
+            if (so.type === 5 && so.tile != null) {
+                retreatByTile.set(so.tile, so);
+            } else {
+                nonRetreatPending.push(so);
+            }
+        }
+
+        for (const so of retreatByTile.values()) drawOne(so);
+        for (const so of nonRetreatPending) drawOne(so);
         return;
     }
 
     // История: стрелки применённых приказов в фазе движения.
     if (displayPhaseFor(viewingIndex) !== 'movement') return;
+
+    // Сначала — точки отступления из состояния этого хода: они
+    // персистентны, и в entry.orders их может не быть для ходов, где
+    // новый Order 5 не выдавался.
+    const histState = getDisplayState();
+    if (histState) {
+        for (const t of histState.tiles) {
+            for (let ci = 0; ci < t.retreat_province.length; ci++) {
+                const rp = t.retreat_province[ci];
+                if (!rp) continue;
+                drawOne({
+                    type: 5,
+                    owner: ci,
+                    tile: t.id,
+                    retreat_province: rp.id,
+                });
+            }
+        }
+    }
+
+    // Затем — все прочие применённые приказы этого хода (Order 5 пропускаем,
+    // чтобы не дублировать уже нарисованное из состояния).
     const entry = turns[viewingIndex];
     if (!entry || !entry.orders || entry.orders.length === 0) return;
-    for (const so of entry.orders) drawOne(so);
+    for (const so of entry.orders) {
+        if (so.type === 5) continue;
+        drawOne(so);
+    }
 }
 
 function renderTurnInfo(): void {
@@ -381,6 +463,23 @@ function describeOrder(o: Order): string {
     }
 }
 
+function renderInvestStatus(): void {
+    const show = activeMode === 'invest'
+        || investmentTiles.size > 0
+        || (parseInt(investAmountEl.value, 10) || 0) > 0;
+    investStatusEl.hidden = !show;
+    if (!show) return;
+    investCountEl.textContent = `${investmentTiles.size} тайл(ов)`;
+
+    // Подрезаем сумму до доступной казны — на случай, если другие приказы
+    // съели бюджет или игрок ввёл слишком много.
+    const avail = availableTreasury();
+    const raw = parseInt(investAmountEl.value, 10) || 0;
+    if (raw > avail) {
+        investAmountEl.value = String(Math.max(0, Math.floor(avail)));
+    }
+}
+
 function renderOrders(): void {
     ordersListEl.innerHTML = '';
     if (pendingOrders.length === 0) {
@@ -413,8 +512,13 @@ function renderOrders(): void {
     } else if (myReady) {
         ordersHintEl.textContent = 'Ожидание других игроков…';
     } else {
-        ordersHintEl.textContent = hintForMode(activeMode);
-    }
+        ordersHintEl.textContent = hintForMode(activeMode, modeSelection.tiles);
+	}
+
+    // Кнопка «Сбросить» активна только при непустом списке.
+    ordersResetBtn.disabled = blocked || pendingOrders.length === 0;
+
+    renderInvestStatus();
 
     // Стрелки и армии зависят от pendingOrders — перерисовываем каждый
     // раз, когда меняется список приказов (создание, удаление, очистка).
@@ -424,20 +528,25 @@ function renderOrders(): void {
 
 
 
-function hintForMode(mode: OrderMode): string {
+function hintForMode(mode: OrderMode, sel: number[]): string {
     switch (mode) {
         case 'move':
-            return 'Кликните свой тайл, затем соседний — чтобы добавить движение.';
+            if (sel.length === 0) return 'Перемещение · шаг 1/2 — кликните свой тайл-источник.';
+            return 'Перемещение · шаг 2/2 — кликните соседний тайл-назначение.';
         case 'supportAttack':
-            return 'Поддержка атаки: свой тайл → тайл атаки → тайл-цель.';
+            if (sel.length === 0) return 'Поддержка атаки · шаг 1/3 — выберите свой тайл-источник.';
+            if (sel.length === 1) return 'Поддержка атаки · шаг 2/3 — выберите тайл атаки (target_from). Можно тот же, что и источник.';
+            return 'Поддержка атаки · шаг 3/3 — выберите тайл-цель атаки (target_to).';
         case 'supportDefense':
-            return 'Поддержка обороны: свой тайл → соседний защищаемый тайл.';
+            if (sel.length === 0) return 'Поддержка обороны · шаг 1/2 — выберите свой тайл-источник.';
+            return 'Поддержка обороны · шаг 2/2 — выберите соседний защищаемый тайл.';
         case 'invest':
-            return 'Кликайте тайлы для инвестиций (в том числе чужие), затем нажмите «Инвестиции (E)» ещё раз.';
+            return 'Инвестиции: кликайте тайлы (в том числе чужие), задайте сумму в поле сверху. Приказ уйдёт при нажатии «Готов».';
         case 'gift':
             return 'Кликните столицу другой страны — откроется ввод суммы.';
         case 'retreat':
-            return 'Отступление: свой тайл → соседний тайл (куда отступать).';
+            if (sel.length === 0) return 'Отступление · шаг 1/2 — выберите тайл-источник (любой, не обязательно свой).';
+            return 'Отступление · шаг 2/2 — выберите соседний тайл, куда отступать.';
         case 'rename':
             return 'Кликните свою провинцию — откроется ввод нового имени.';
         case 'none':
@@ -454,6 +563,7 @@ function renderModeBar(): void {
         btn.classList.toggle('active', !blocked && mode === activeMode);
     });
     orderBuyBtn.disabled = blocked;
+    ordersResetBtn.disabled = blocked || pendingOrders.length === 0;
 }
 
 function updateMapInteraction(): void {
@@ -463,8 +573,10 @@ function updateMapInteraction(): void {
         mapView.setExternalSelectionMode(false);
         return;
     }
+    // Во всех режимах подсветку тайлов ведёт game.ts (цветные слои),
+    // MapView не должен рисовать собственную белую заливку.
     mapView.setSelectionMode('tile');
-    mapView.setExternalSelectionMode(activeMode === 'invest');
+    mapView.setExternalSelectionMode(true);
 }
 
 function renderReadyBar(): void {
@@ -507,6 +619,35 @@ function removeOrder(index: number): void {
     renderOrders();
 }
 
+function undoLastOrder(): void {
+    if (isOrderingBlocked()) return;
+    if (pendingOrders.length === 0) return;
+    pendingOrders.pop();
+    renderOrders();
+}
+
+/**
+ * Каскадная отмена по Esc / правому клику:
+ *   1. открыта модалка → закрыть её;
+ *   2. есть незавершённый шаг выбора → сбросить выделение;
+ *   3. активен режим → выйти в `none`.
+ * Возвращает true, если что-то реально отменили.
+ */
+function cancelCurrentStep(): boolean {
+    if (anyModalOpen()) { closeAllOrderModals(); applyModeHighlight(); return true; }
+    if (modeSelection.tiles.length > 0) {
+        modeSelection.tiles = [];
+        mapView.clearSelection();
+        applyModeHighlight();
+        return true;
+    }
+    if (!isOrderingBlocked() && activeMode !== 'none') {
+        exitMode();
+        return true;
+    }
+    return false;
+}
+
 // ==================== Общие helper'ы ====================
 
 function claimedFrom(tileId: number): { inf: number; can: number } {
@@ -538,6 +679,71 @@ function isNeighbour(fromId: number, toId: number): boolean {
     const from = currentState.tiles[fromId];
     if (!from) return false;
     return from.neighbours.some(n => n.id === toId);
+}
+
+/**
+ * Кандидаты на роль `target_from` для Order 7 (после выбора `from`).
+ * Валидный target_from — такой тайл t, что у него с `from` есть общий
+ * сосед (этот сосед станет target_to), либо t === from (спец-случай,
+ * уже отображён зелёным, поэтому в белый список не попадает).
+ */
+function attackTargetFromCandidates(fromId: number): number[] {
+    if (!currentState) return [];
+    const from = currentState.tiles[fromId];
+    if (!from) return [];
+    const fromNbrs = new Set(from.neighbours.map(n => n.id));
+    const result = new Set<number>();
+    for (const n of from.neighbours) {
+        for (const m of n.neighbours) {
+            if (m.id === fromId) continue;
+            if (result.has(m.id)) continue;
+            if (m.neighbours.some(x => fromNbrs.has(x.id))) {
+                result.add(m.id);
+            }
+        }
+    }
+    return [...result];
+}
+
+/**
+ * Кандидаты на роль `target_to` для Order 7 (после выбора from и target_from).
+ * target_to должен быть соседом и from, и target_from, и не совпадать
+ * ни с одним из них.
+ */
+function attackTargetToCandidates(fromId: number, targetFromId: number): number[] {
+    if (!currentState) return [];
+    const from = currentState.tiles[fromId];
+    if (!from) return [];
+    if (fromId === targetFromId) {
+        return from.neighbours.map(n => n.id);
+    }
+    const targetFrom = currentState.tiles[targetFromId];
+    if (!targetFrom) return [];
+    const tfNbrs = new Set(targetFrom.neighbours.map(n => n.id));
+    return from.neighbours
+        .map(n => n.id)
+        .filter(id => tfNbrs.has(id) && id !== fromId && id !== targetFromId);
+}
+
+function computeCandidates(mode: OrderMode, sel: number[]): number[] {
+    if (!currentState) return [];
+    switch (mode) {
+        case 'move':
+        case 'supportDefense':
+        case 'retreat': {
+            if (sel.length !== 1) return [];
+            const from = currentState.tiles[sel[0]!];
+            if (!from) return [];
+            return from.neighbours.map(n => n.id);
+        }
+        case 'supportAttack': {
+            if (sel.length === 1) return attackTargetFromCandidates(sel[0]!);
+            if (sel.length === 2) return attackTargetToCandidates(sel[0]!, sel[1]!);
+            return [];
+        }
+        default:
+            return [];
+    }
 }
 
 function sanitizeNumericInput(el: HTMLInputElement): number {
@@ -572,10 +778,8 @@ function setMode(mode: OrderMode): void {
     if (isOrderingBlocked()) return;
 
     if (mode === activeMode) {
-        if (mode === 'invest' && modeSelection.tiles.length > 0) {
-            commitInvest();
-            return;
-        }
+        // Повторный клик/хоткей по активной кнопке — выход в 'none'.
+        // investmentTiles при этом сохраняются.
         activeMode = 'none';
     } else {
         activeMode = mode;
@@ -583,7 +787,7 @@ function setMode(mode: OrderMode): void {
 
     modeSelection.tiles = [];
     mapView.clearSelection();
-    mapView.clearHighlight();
+    applyModeHighlight();
     closeAllOrderModals();
     renderModeBar();
     renderOrders();
@@ -594,10 +798,48 @@ function exitMode(): void {
     activeMode = 'none';
     modeSelection.tiles = [];
     mapView.clearSelection();
-    mapView.clearHighlight();
+    applyModeHighlight();
     renderModeBar();
     renderOrders();
     updateMapInteraction();
+}
+
+/**
+ * Перерисовать цветную подсветку тайлов по текущему состоянию
+ * `activeMode` + `modeSelection.tiles`. Вызывается после любого
+ * изменения выделения или закрытия модалки.
+ */
+function applyModeHighlight(): void {
+    const layers: Array<{ tiles: number[]; color: string }> = [];
+
+    // Инвестиционные тайлы — persistent, показываем их всегда, когда
+    // мы не в заблокированном состоянии (история/ready).
+    if (!isOrderingBlocked() && investmentTiles.size > 0) {
+        layers.push({ tiles: [...investmentTiles], color: HL_INVEST });
+    }
+
+    // Подсветка шага текущего режима.
+    if (!isOrderingBlocked() && activeMode !== 'none') {
+        const sel = modeSelection.tiles;
+        if (activeMode === 'supportAttack') {
+            if (sel.length >= 1) layers.push({ tiles: [sel[0]!], color: HL_GREEN });
+            if (sel.length >= 2) layers.push({ tiles: [sel[1]!], color: HL_ORANGE });
+        } else if (activeMode !== 'invest') {
+            if (sel.length >= 1) layers.push({ tiles: sel, color: HL_GREEN });
+        }
+        // Для invest дополнительный слой не нужен — уже покрыт выше.
+
+        const candidates = computeCandidates(activeMode, sel);
+        if (candidates.length > 0) {
+            layers.push({ tiles: candidates, color: HL_CANDIDATE });
+        }
+    }
+
+    if (layers.length === 0) {
+        mapView.clearHighlight();
+    } else {
+        mapView.setHighlightLayers(layers);
+    }
 }
 
 ordersButtonsEl.addEventListener('click', (e) => {
@@ -610,11 +852,35 @@ ordersButtonsEl.addEventListener('click', (e) => {
 // ==================== Хоткеи ====================
 
 window.addEventListener('keydown', (e) => {
+    // Esc обрабатываем первым — независимо от блокировок и фокуса,
+    // чтобы игрок мог закрыть модалку/отменить шаг в любой момент.
+    if (e.code === 'Escape') {
+        // Если фокус в поле ввода — сначала снять фокус.
+        const t = document.activeElement;
+        if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) {
+            t.blur();
+            e.preventDefault();
+            return;
+        }
+        if (cancelCurrentStep()) e.preventDefault();
+        return;
+    }
+
     if (isOrderingBlocked()) return;
     if (anyModalOpen()) return;
     const t = document.activeElement;
     if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
     if (t instanceof HTMLElement && t.isContentEditable) return;
+
+    // Ctrl+Z / Cmd+Z — откат последнего приказа.
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+        e.preventDefault();
+        undoLastOrder();
+        return;
+    }
+
+    // Хоткеи режимов — только без модификаторов.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
 
     switch (e.code) {
         case 'KeyA': setMode('move'); break;
@@ -699,6 +965,23 @@ orderBuyBtn.addEventListener('click', () => {
     if (isOrderingBlocked()) return;
     openOrderBuyModal();
 });
+
+ordersResetBtn.addEventListener('click', () => {
+    if (isOrderingBlocked()) return;
+    if (pendingOrders.length === 0) return;
+    openConfirmModal({
+        title: 'Сбросить все приказы?',
+        body: `Будет удалено приказов: ${pendingOrders.length}. Действие необратимо.`,
+        onConfirm: () => {
+            pendingOrders = [];
+            modeSelection.tiles = [];
+            mapView.clearSelection();
+            mapView.clearHighlight();
+            renderOrders();
+            renderModeBar();
+        },
+    });
+});
 orderBuyOverlay.addEventListener('click', closeOrderBuyModal);
 orderBuyCancelEl.addEventListener('click', closeOrderBuyModal);
 
@@ -724,6 +1007,19 @@ orderBuyOkEl.addEventListener('click', () => {
     renderOrders();
     closeOrderBuyModal();
 });
+
+investAmountEl.addEventListener('input', () => {
+    sanitizeNumericInput(investAmountEl);
+    renderInvestStatus();
+});
+
+investClearEl.addEventListener('click', () => {
+    investmentTiles.clear();
+    investAmountEl.value = '0';
+    applyModeHighlight();
+    renderInvestStatus();
+});
+
 
 // ==================== Troop modal (Orders 6/7/8) ====================
 
@@ -759,17 +1055,20 @@ troopInfEl.addEventListener('input', () => sanitizeNumericInput(troopInfEl));
 troopCanEl.addEventListener('input', () => sanitizeNumericInput(troopCanEl));
 
 troopOkEl.addEventListener('click', () => {
-    if (!troopModalConfig) { closeTroopModal(); return; }
+    if (!troopModalConfig) { closeTroopModal(); applyModeHighlight(); return; }
     const inf = Math.min(sanitizeNumericInput(troopInfEl), troopModalConfig.maxInf);
     const can = Math.min(sanitizeNumericInput(troopCanEl), troopModalConfig.maxCan);
-    if (inf === 0 && can === 0) { closeTroopModal(); return; }
+    if (inf === 0 && can === 0) { closeTroopModal(); applyModeHighlight(); return; }
     const cb = troopModalConfig.onSubmit;
     closeTroopModal();
     cb(inf, can);
+    // onSubmit выставил sel = [] и вызвал renderOrders;
+    // здесь — просто снять preview-подсветку.
+    applyModeHighlight();
 });
 
-troopCancelEl.addEventListener('click', closeTroopModal);
-troopOverlayEl.addEventListener('click', closeTroopModal);
+troopCancelEl.addEventListener('click', () => { closeTroopModal(); applyModeHighlight(); });
+troopOverlayEl.addEventListener('click', () => { closeTroopModal(); applyModeHighlight(); });
 
 // ==================== Money modal (Orders 1, 3) ====================
 
@@ -839,9 +1138,10 @@ confirmOkEl.addEventListener('click', () => {
     const cfg = confirmModalConfig;
     closeConfirmModal();
     if (cfg) cfg.onConfirm();
+    applyModeHighlight();
 });
-confirmCancelEl.addEventListener('click', closeConfirmModal);
-confirmOverlay.addEventListener('click', closeConfirmModal);
+confirmCancelEl.addEventListener('click', () => { closeConfirmModal(); applyModeHighlight(); });
+confirmOverlay.addEventListener('click', () => { closeConfirmModal(); applyModeHighlight(); });
 
 // ==================== Rename modal ====================
 
@@ -907,19 +1207,24 @@ function handleMoveClick(tileId: number): void {
         const avail = availableInTile(tileId);
         if (avail.inf + avail.can === 0) return;
         sel.push(tileId);
-        mapView.selectTile(tileId);
+        applyModeHighlight();
         return;
     }
 
     const fromId = sel[0]!;
     if (tileId === fromId) {
         sel.length = 0;
-        mapView.clearSelection();
+        applyModeHighlight();
         return;
     }
 
     if (isNeighbour(fromId, tileId)) {
         const avail = availableInTile(fromId);
+        // Пока открыта модалка — [from] зелёным + [to] оранжевым.
+        mapView.setHighlightLayers([
+            { tiles: [fromId], color: HL_GREEN },
+            { tiles: [tileId], color: HL_ORANGE },
+        ]);
         openTroopModal({
             title: `Движение: ${fromId} → ${tileId}`,
             subtitle: `Доступно: ${avail.inf} пех., ${avail.can} пуш.`,
@@ -933,7 +1238,6 @@ function handleMoveClick(tileId: number): void {
                     infantry: inf, cannons: can,
                 });
                 sel.length = 0;
-                mapView.clearSelection();
                 renderOrders();
             },
         });
@@ -945,12 +1249,12 @@ function handleMoveClick(tileId: number): void {
         if (avail.inf + avail.can > 0) {
             sel.length = 0;
             sel.push(tileId);
-            mapView.selectTile(tileId);
+            applyModeHighlight();
             return;
         }
     }
     sel.length = 0;
-    mapView.clearSelection();
+    applyModeHighlight();
 }
 
 // --- Order 8: поддержка обороны ---
@@ -968,15 +1272,19 @@ function handleSupportDefenseClick(tileId: number): void {
         const avail = availableInTile(tileId);
         if (avail.inf + avail.can === 0) return;
         sel.push(tileId);
-        mapView.selectTile(tileId);
+        applyModeHighlight();
         return;
     }
 
     const fromId = sel[0]!;
-    if (tileId === fromId) { sel.length = 0; mapView.clearSelection(); return; }
+    if (tileId === fromId) { sel.length = 0; applyModeHighlight(); return; }
     if (!isNeighbour(fromId, tileId)) return;
 
     const avail = availableInTile(fromId);
+    mapView.setHighlightLayers([
+        { tiles: [fromId], color: HL_GREEN },
+        { tiles: [tileId], color: HL_ORANGE },
+    ]);
     openTroopModal({
         title: `Поддержка обороны: ${fromId} → ${tileId}`,
         subtitle: `Доступно: ${avail.inf} пех., ${avail.can} пуш.`,
@@ -990,7 +1298,6 @@ function handleSupportDefenseClick(tileId: number): void {
                 infantry: inf, cannons: can,
             });
             sel.length = 0;
-            mapView.clearSelection();
             renderOrders();
         },
     });
@@ -1006,12 +1313,12 @@ function handleSupportAttackClick(tileId: number): void {
 
     const sel = modeSelection.tiles;
 
-    if (sel.length === 0) {
+       if (sel.length === 0) {
         if (tile.owner !== me) return;
         const avail = availableInTile(tileId);
         if (avail.inf + avail.can === 0) return;
         sel.push(tileId);
-        mapView.selectTile(tileId);
+        applyModeHighlight();
         return;
     }
 
@@ -1019,13 +1326,8 @@ function handleSupportAttackClick(tileId: number): void {
         // шаг 2: выбор target_from. Разрешено tileId === from (см. §validateOrders).
         // Отмена шага — правый клик или Esc.
         const fromId = sel[0]!;
-        if (tileId === fromId) {
-            sel.push(tileId);
-            mapView.setHighlight([fromId]);  // подсветка одна, но семантика сохранена
-            return;
-        }
         sel.push(tileId);
-        mapView.setHighlight([fromId, tileId]);
+        applyModeHighlight();
         return;
     }
 
@@ -1034,13 +1336,23 @@ function handleSupportAttackClick(tileId: number): void {
     // Совпадение с from/target_from запрещено (иначе это вырожденный случай).
     if (tileId === fromId || tileId === targetFromId) {
         sel.length = 0;
-        mapView.clearSelection();
+        applyModeHighlight();
         return;
     }
     if (!isNeighbour(targetFromId, tileId)) return;
     if (!isNeighbour(fromId, tileId)) return;
 
     const avail = availableInTile(fromId);
+    // Preview-подсветка [from(green), target_from(orange), target_to(red)].
+    // При from === target_from — тот же тайл: orange перекрывает green,
+    // но red отдельный, поэтому визуально читается как «источник = цель атаки».
+    const preview = new Map<number, string>();
+    preview.set(fromId, HL_GREEN);
+    preview.set(targetFromId, HL_ORANGE);
+    preview.set(tileId, HL_RED);
+    mapView.setHighlightLayers(
+        [...preview.entries()].map(([id, color]) => ({ tiles: [id], color })),
+    );
     openTroopModal({
         title: `Поддержка атаки: ${fromId} → ${targetFromId} ⇒ ${tileId}`,
         subtitle: `Доступно: ${avail.inf} пех., ${avail.can} пуш.`,
@@ -1055,7 +1367,6 @@ function handleSupportAttackClick(tileId: number): void {
                 infantry: inf, cannons: can,
             });
             sel.length = 0;
-            mapView.clearSelection();
             renderOrders();
         },
     });
@@ -1067,37 +1378,29 @@ function handleInvestClick(tileId: number): void {
     const tile = currentState.tiles[tileId];
     if (!tile) return;
 
-    const idx = modeSelection.tiles.indexOf(tileId);
-    if (idx >= 0) modeSelection.tiles.splice(idx, 1);
-    else modeSelection.tiles.push(tileId);
-    mapView.setHighlight(modeSelection.tiles);
+    if (investmentTiles.has(tileId)) investmentTiles.delete(tileId);
+    else investmentTiles.add(tileId);
+    applyModeHighlight();
+    renderInvestStatus();
 }
 
-function commitInvest(): void {
-    if (activeMode !== 'invest') return;
-    if (modeSelection.tiles.length === 0) return;
+/**
+ * Превращает текущий persistent-выбор invest в Order 1 и добавляет его
+ * к pendingOrders. Вызывается в момент «Готов», до отправки на сервер.
+ * Если тайлов нет или сумма = 0 — ничего не делает.
+ */
+function commitInvestDraft(): void {
+    if (investmentTiles.size === 0) return;
+    const amount = parseInt(investAmountEl.value, 10) || 0;
+    if (amount <= 0) return;
     if (!currentState || yourCountryIdx == null) return;
     const me = currentState.countries[yourCountryIdx];
     if (!me) return;
 
-    const avail = availableTreasury();
-    if (avail <= 0) return;
-    const tilesSnapshot = modeSelection.tiles.slice();
-
-    openMoneyModal({
-        title: `Инвестиции в ${tilesSnapshot.length} тайл(ов)`,
-        subtitle: `Доступно: ${avail} ₵`,
-        max: avail,
-        onSubmit: (investments) => {
-            if (investments <= 0) return;
-            pendingOrders.push({
-                type: 1, owner: me,
-                investments,
-                tiles: tilesSnapshot.map(id => currentState!.tiles[id]!),
-            });
-            renderOrders();
-            exitMode();
-        },
+    pendingOrders.push({
+        type: 1, owner: me,
+        investments: amount,
+        tiles: [...investmentTiles].map(id => currentState!.tiles[id]!),
     });
 }
 
@@ -1129,6 +1432,7 @@ function handleGiftClick(tileId: number): void {
 }
 
 // --- Order 5: отступление ---
+// --- Order 5: отступление ---
 function handleRetreatClick(tileId: number): void {
     if (!currentState || yourCountryIdx == null) return;
     const me = currentState.countries[yourCountryIdx];
@@ -1139,27 +1443,38 @@ function handleRetreatClick(tileId: number): void {
     const sel = modeSelection.tiles;
 
     if (sel.length === 0) {
-        if (tile.owner !== me) return;
+        // Order 5 допустим для любого тайла: retreat_province индексируется
+        // по стране, и он релевантен не только для обороны своих тайлов,
+        // но и для атаки на чужие — при провале атаки отступающие уходят
+        // в retreat_province[своя страна] именно атакованного тайла.
         sel.push(tileId);
-        mapView.selectTile(tileId);
+        applyModeHighlight();
         return;
     }
 
     const fromId = sel[0]!;
-    if (tileId === fromId) { sel.length = 0; mapView.clearSelection(); return; }
+    if (tileId === fromId) { sel.length = 0; applyModeHighlight(); return; }
     if (!isNeighbour(fromId, tileId)) return;
 
+    mapView.setHighlightLayers([
+        { tiles: [fromId], color: HL_GREEN },
+        { tiles: [tileId], color: HL_ORANGE },
+    ]);
     openConfirmModal({
         title: `Отступление: ${fromId} → ${tileId}`,
         body: 'Назначить этот тайл как точку отступления для своих войск из указанного тайла?',
         onConfirm: () => {
+            const fromTile = currentState!.tiles[fromId]!;
+            for (let i = pendingOrders.length - 1; i >= 0; i--) {
+                const o = pendingOrders[i]!;
+                if (o.type === 5 && o.tile === fromTile) pendingOrders.splice(i, 1);
+            }
             pendingOrders.push({
                 type: 5, owner: me,
-                tile: currentState!.tiles[fromId]!,
+                tile: fromTile,
                 retreat_province: currentState!.tiles[tileId]!,
             });
             sel.length = 0;
-            mapView.clearSelection();
             renderOrders();
         },
     });
@@ -1171,6 +1486,10 @@ function handleRenameClick(tileId: number): void {
 }
 
 // ==================== Dispatcher кликов по карте ====================
+
+mapView.onCancelStep(() => {
+    cancelCurrentStep();
+});
 
 mapView.onTileClick((tileId) => {
     if (isOrderingBlocked()) return;
@@ -1199,6 +1518,11 @@ mapView.onTileClick((tileId) => {
 
 readyBtn.addEventListener('click', async () => {
     if (myReady) return;
+
+    // Финализируем отложенный invest-черновик — он попадёт в тот же
+    // запрос, что и остальные приказы.
+    commitInvestDraft();
+
     readyBtn.disabled = true;
     readyBtn.textContent = 'Отправка...';
 
@@ -1454,6 +1778,8 @@ async function bootstrap(): Promise<void> {
             case 'turnStarted':
                 myReady = false;
                 pendingOrders = [];
+                investmentTiles.clear();
+                investAmountEl.value = '0';
                 modeSelection.tiles = [];
                 closeAllOrderModals();
                 mapView.clearSelection();
@@ -1489,6 +1815,8 @@ async function bootstrap(): Promise<void> {
                 accumulatedOrders = [];
                 pendingOrders = [];
                 myReady = false;
+                investmentTiles.clear();
+                investAmountEl.value = '0';
                 modeSelection.tiles = [];
                 closeAllOrderModals();
                 mapView.clearSelection();

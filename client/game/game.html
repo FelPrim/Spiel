@@ -29,6 +29,14 @@
 
         <div id="orders-panel">
             <div id="orders-header">Приказы</div>
+            <div id="invest-status" hidden>
+                <span class="invest-label">Инвестиции:</span>
+                <input type="text" inputmode="numeric" autocomplete="off"
+                       id="invest-amount" value="0">
+                <span class="invest-unit">₵</span>
+                <span id="invest-count">0 тайл(ов)</span>
+                <button id="invest-clear" type="button">Очистить</button>
+            </div>
             <ul id="orders-list"></ul>
             <div id="orders-buttons">
                 <button id="order-buy-btn" type="button">Купить войска</button>
@@ -39,6 +47,7 @@
                 <button type="button" data-mode="supportAttack"  id="mode-attack">Поддержка атаки (S)</button>
                 <button type="button" data-mode="supportDefense" id="mode-defense">Поддержка обороны (D)</button>
                 <button type="button" data-mode="rename"         id="mode-rename">Переименовать (N)</button>
+                <button id="orders-reset-btn" type="button">Сбросить все приказы</button>
             </div>
             <div id="orders-hint">
                 Кликните свой тайл, затем соседний — чтобы добавить движение.

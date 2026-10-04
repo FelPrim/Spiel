@@ -221,6 +221,17 @@
     cursor: not-allowed;
 }
 
+#orders-buttons #orders-reset-btn {
+    grid-column: 1 / -1;
+    background: rgba(200, 80, 80, 0.35);
+    border-color: rgba(255, 120, 120, 0.6);
+    margin-top: 2px;
+}
+
+#orders-buttons #orders-reset-btn:hover:not(:disabled) {
+    background: rgba(200, 80, 80, 0.55);
+}
+
 #orders-hint {
     font-size: 12px;
     opacity: 0.6;
@@ -412,4 +423,57 @@
 
 #orders-panel.viewing-movement #orders-view-banner {
     display: block;
+}
+
+/* ============ Invest status (Commit 3) ============ */
+
+#invest-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 6px 8px;
+    margin: 0 0 6px 0;
+    background: rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+#invest-status[hidden] { display: none; }
+
+#invest-status .invest-label { opacity: 0.85; }
+#invest-status .invest-unit { opacity: 0.7; }
+
+#invest-status #invest-amount {
+    width: 60px;
+    padding: 3px 5px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 12px;
+    text-align: right;
+}
+
+#invest-status #invest-count {
+    opacity: 0.85;
+    margin-left: auto;
+}
+
+#invest-status #invest-clear {
+    padding: 3px 8px;
+    background: rgba(200, 80, 80, 0.5);
+    color: #fff;
+    border: 1px solid rgba(255, 120, 120, 0.7);
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+}
+
+#invest-status #invest-clear:hover {
+    background: rgba(200, 80, 80, 0.75);
 }

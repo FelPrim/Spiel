@@ -42,7 +42,7 @@ function dashArray(width: number): string {
 }
 
 function appendLine(
-    svg: SVGSVGElement,
+    svg: SVGElement,
     fromX: number, fromY: number,
     toX: number, toY: number,
     width: number, color: string, dashed: boolean,
@@ -60,7 +60,7 @@ function appendLine(
 }
 
 function appendHead(
-    svg: SVGSVGElement,
+    svg: SVGElement,
     tipX: number, tipY: number,
     dirX: number, dirY: number,
     width: number, color: string,
@@ -311,4 +311,38 @@ export function drawSupportAttack(
     }
 
     appendLabelAt(svg, mX, mY, normalX, normalY, dirX, dirY, value1, value2, color, w);
+}
+/**
+ * Пунктирная стрелка отступления (Order 5). Тоньше обычных стрелок,
+ * заметно обрезана с обоих концов и полупрозрачна — на карте должно
+ * читаться как «служебная разметка», а не как боевой приказ.
+ */
+export function drawRetreat(
+    svg: SVGSVGElement,
+    fromX: number, fromY: number,
+    toX: number, toY: number,
+    color: string = '#e11d48',
+    trim: number = 0.2,
+): void {
+    const dx = toX - fromX, dy = toY - fromY;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-6) return;
+    const ux = dx / length, uy = dy / length;
+
+    const t = Math.max(0, Math.min(0.49, trim));
+    const sX = fromX + ux * length * t;
+    const sY = fromY + uy * length * t;
+    const eX = toX - ux * length * t;
+    const eY = toY - uy * length * t;
+
+    const width = Math.max(lineWidth(length) * 0.55, 2);
+    const headLength = Math.max(width * 3.2, 9);
+    const bodyEndX = eX - ux * headLength;
+    const bodyEndY = eY - uy * headLength;
+
+    const g = document.createElementNS(ARROW_NS, 'g') as SVGGElement;
+    g.setAttribute('opacity', '0.45');
+    appendLine(g, sX, sY, bodyEndX, bodyEndY, width, color, true);
+    appendHead(g, eX, eY, ux, uy, width, color);
+    svg.appendChild(g);
 }
