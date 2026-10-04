@@ -12,6 +12,7 @@ import {
     type Order,
     type SerializedGameState,
     type SerializedOrder,
+    type Tile,
 } from '../../shared/game';
 import type {
     SseEvent,
@@ -144,9 +145,11 @@ interface ModeSelection { tiles: number[]; }
 let modeSelection: ModeSelection = { tiles: [] };
 
 /**
- * Persistent-выбор тайлов для инвестиций. НЕ сбрасывается при выходе из
- * режима invest — только кнопкой «Очистить» или при `turnStarted`.
- * На «Готов» превращается в Order 1.
+ * Persistent-выбор тайлов для инвестиций. Хранится параллельно с
+ * `pendingOrders`: в последнем всегда есть ровно один Order 1,
+ * отражающий текущее состояние `investmentTiles` + `#invest-amount`.
+ * Значения переживают ходы; сбрасываются только кнопкой «Очистить»
+ * или «Сбросить все приказы».
  */
 let investmentTiles: Set<number> = new Set();
 
@@ -406,10 +409,18 @@ function renderCountryInfo(): void {
         countryTilesEl.textContent = 'Провинций: —';
         return;
     }
-	const income = Math.round(c.tiles.reduce((s, t) => s + t.economy, 0) * 1000) / 1000;
-	countryTreasEl.textContent = `Казна: ${c.treasury}/${income} ₵`;
+    const income = Math.round(c.tiles.reduce((s, t) => s + t.economy, 0) * 1000) / 1000;
+
+    // На живом ходу показываем остаток после pending-приказов, чтобы
+    // поле реагировало на изменения инвестиций, покупок и подарков.
+    // В истории (или в просмотре чужого хода) — «сырое» значение снапшота.
+    let treasury = c.treasury;
+    if (!isViewingHistory()) {
+        treasury = Math.round((c.treasury - spentTreasury()) * 1000) / 1000;
+    }
+
+    countryTreasEl.textContent = `Казна: ${treasury}/${income} ₵`;
     countryNameEl.textContent = `Страна #${c.id}`;
-   // countryTreasEl.textContent = `Казна: ${c.treasury} ₵`;
     countryTilesEl.textContent = `Провинций: ${c.tiles.length}`;
 }
 
@@ -453,7 +464,10 @@ function updateViewButtons(): void {
 
 function describeOrder(o: Order): string {
     switch (o.type) {
-        case 1: return `Инвестиции ${o.investments} ₵ → тайлы [${o.tiles.map(t => t.id).join(',')}]`;
+        case 1: {
+            if (o.tiles.length === 0 && o.investments === 0) return 'Инвестиции: не заданы';
+            return `Инвестиции ${o.investments} ₵ × ${o.tiles.length} тайл(ов)`;
+        }
         case 3: return `Подарок ${o.gift} ₵ стране #${o.recipient.id}`;
         case 4: return `Покупка: ${o.infantry} пех., ${o.cannons} пуш.`;
         case 5: return `Отступление: ${o.tile.id} → ${o.retreat_province.id}`;
@@ -464,23 +478,20 @@ function describeOrder(o: Order): string {
 }
 
 function renderInvestStatus(): void {
-    const show = activeMode === 'invest'
-        || investmentTiles.size > 0
-        || (parseInt(investAmountEl.value, 10) || 0) > 0;
-    investStatusEl.hidden = !show;
-    if (!show) return;
+    investStatusEl.hidden = false;
     investCountEl.textContent = `${investmentTiles.size} тайл(ов)`;
-
-    // Подрезаем сумму до доступной казны — на случай, если другие приказы
-    // съели бюджет или игрок ввёл слишком много.
-    const avail = availableTreasury();
-    const raw = parseInt(investAmountEl.value, 10) || 0;
-    if (raw > avail) {
-        investAmountEl.value = String(Math.max(0, Math.floor(avail)));
-    }
+    const blocked = isOrderingBlocked();
+    investAmountEl.disabled = blocked;
+    investClearEl.disabled = blocked;
 }
 
 function renderOrders(): void {
+    const blocked = isOrderingBlocked();
+
+    // Подрезаем invest-сумму, если бюджет съеден другими приказами.
+    // Делаем это ДО рендера списка, чтобы описание Order 1 было свежим.
+    reconcileInvestBudget();
+
     ordersListEl.innerHTML = '';
     if (pendingOrders.length === 0) {
         const li = document.createElement('li');
@@ -493,17 +504,20 @@ function renderOrders(): void {
             const span = document.createElement('span');
             span.textContent = describeOrder(o);
             li.appendChild(span);
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.textContent = '×';
-            btn.title = 'Удалить';
-            btn.addEventListener('click', () => removeOrder(i));
-            li.appendChild(btn);
+            // Invest-черновик редактируется через #invest-status,
+            // отдельной кнопки × у него нет.
+            if (o.type !== 1) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = '×';
+                btn.title = 'Удалить';
+                btn.addEventListener('click', () => removeOrder(i));
+                li.appendChild(btn);
+            }
             ordersListEl.appendChild(li);
         });
     }
 
-    const blocked = isOrderingBlocked();
     ordersPanel.classList.toggle('locked', blocked);
 
     if (isViewingHistory()) {
@@ -513,15 +527,14 @@ function renderOrders(): void {
         ordersHintEl.textContent = 'Ожидание других игроков…';
     } else {
         ordersHintEl.textContent = hintForMode(activeMode, modeSelection.tiles);
-	}
+    }
 
-    // Кнопка «Сбросить» активна только при непустом списке.
-    ordersResetBtn.disabled = blocked || pendingOrders.length === 0;
+    ordersResetBtn.disabled = blocked;
+
+    renderCountryInfo();
 
     renderInvestStatus();
-
-    // Стрелки и армии зависят от pendingOrders — перерисовываем каждый
-    // раз, когда меняется список приказов (создание, удаление, очистка).
+    applyModeHighlight();
     renderArrows();
     renderArmies(getDisplayState());
 }
@@ -615,6 +628,12 @@ function renderAll(): void {
 function removeOrder(index: number): void {
     if (isOrderingBlocked()) return;
     if (index < 0 || index >= pendingOrders.length) return;
+    const o = pendingOrders[index]!;
+    if (o.type === 1) {
+        // Инвестиции всегда в списке; «удалить» = очистить их.
+        clearInvest();
+        return;
+    }
     pendingOrders.splice(index, 1);
     renderOrders();
 }
@@ -855,7 +874,6 @@ window.addEventListener('keydown', (e) => {
     // Esc обрабатываем первым — независимо от блокировок и фокуса,
     // чтобы игрок мог закрыть модалку/отменить шаг в любой момент.
     if (e.code === 'Escape') {
-        // Если фокус в поле ввода — сначала снять фокус.
         const t = document.activeElement;
         if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) {
             t.blur();
@@ -868,28 +886,41 @@ window.addEventListener('keydown', (e) => {
 
     if (isOrderingBlocked()) return;
     if (anyModalOpen()) return;
-    const t = document.activeElement;
-    if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
-    if (t instanceof HTMLElement && t.isContentEditable) return;
 
-    // Ctrl+Z / Cmd+Z — откат последнего приказа.
+    const t = document.activeElement;
+    const inAnyInput =
+        t instanceof HTMLInputElement
+        || t instanceof HTMLTextAreaElement
+        || t instanceof HTMLSelectElement
+        || (t instanceof HTMLElement && t.isContentEditable);
+    // «Числовые» поля — только цифры (sanitizeNumericInput), буквенные
+    // хоткеи там не мешают вводу. Настоящие текстовые поля (rename) —
+    // блокируют хоткеи полностью.
+    const inNumericInput =
+        t instanceof HTMLInputElement
+        && (t.inputMode === 'numeric' || t.type === 'number');
+    const inTextField = inAnyInput && !inNumericInput;
+
+    // Ctrl+Z / Cmd+Z — откат последнего приказа, но не в полях ввода
+    // (там браузерный undo важнее).
     if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+        if (inAnyInput) return;
         e.preventDefault();
         undoLastOrder();
         return;
     }
 
-    // Хоткеи режимов — только без модификаторов.
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (inTextField) return;
 
     switch (e.code) {
-        case 'KeyA': setMode('move'); break;
-        case 'KeyS': setMode('supportAttack'); break;
-        case 'KeyD': setMode('supportDefense'); break;
-        case 'KeyE': setMode('invest'); break;
-        case 'KeyG': setMode('gift'); break;
-        case 'KeyR': setMode('retreat'); break;
-        case 'KeyN': setMode('rename'); break;
+        case 'KeyA': e.preventDefault(); setMode('move'); break;
+        case 'KeyS': e.preventDefault(); setMode('supportAttack'); break;
+        case 'KeyD': e.preventDefault(); setMode('supportDefense'); break;
+        case 'KeyE': e.preventDefault(); setMode('invest'); break;
+        case 'KeyG': e.preventDefault(); setMode('gift'); break;
+        case 'KeyR': e.preventDefault(); setMode('retreat'); break;
+        case 'KeyN': e.preventDefault(); setMode('rename'); break;
     }
 });
 
@@ -931,6 +962,90 @@ function availableTreasury(): number {
     return Math.max(0, Math.round((me.treasury - spentTreasury()) * 1000) / 1000);
 }
 
+/** Максимум, который можно вложить сейчас (за вычетом не-invest приказов). */
+function maxInvestAmount(): number {
+    if (!currentState || yourCountryIdx == null) return 0;
+    const me = currentState.countries[yourCountryIdx];
+    if (!me) return 0;
+    let spent = 0;
+    for (const o of pendingOrders) {
+        if (o.type === 1) continue;
+        else if (o.type === 3) spent += o.gift;
+        else if (o.type === 4) spent += o.infantry * INF_COST + o.cannons * CAN_COST;
+    }
+    return Math.max(0, Math.floor(me.treasury - spent));
+}
+
+/**
+ * Синхронизирует Order 1 в `pendingOrders` с текущим состоянием
+ * `investmentTiles` + `#invest-amount`. В списке всегда ровно один
+ * invest-черновик — даже если он тривиален (0 тайлов, 0 ₵).
+ * Вызывается после любого изменения invest-состояния и при смене хода.
+ */
+function syncInvestOrder(): void {
+    for (let i = pendingOrders.length - 1; i >= 0; i--) {
+        if (pendingOrders[i]!.type === 1) pendingOrders.splice(i, 1);
+    }
+    if (!currentState || yourCountryIdx == null) return;
+    const me = currentState.countries[yourCountryIdx];
+    if (!me) return;
+
+    const max = maxInvestAmount();
+    let amount = parseInt(investAmountEl.value, 10) || 0;
+    if (amount > max) {
+        amount = max;
+        investAmountEl.value = String(max);
+    }
+    const tiles: Tile[] = [];
+    for (const id of investmentTiles) {
+        const t = currentState.tiles[id];
+        if (t) tiles.push(t);
+    }
+    pendingOrders.push({ type: 1, owner: me, investments: amount, tiles });
+}
+
+/** Очистить invest-черновик: тайлы + сумма. */
+function clearInvest(): void {
+    investmentTiles.clear();
+    investAmountEl.value = '0';
+    syncInvestOrder();
+    applyModeHighlight();
+    renderOrders();
+}
+
+/**
+ * Приказы, уходящие на сервер. Тривиальный invest-черновик отбрасывается:
+ * `applyTurn` списывает `investments` из казны даже при пустом `tiles`,
+ * то есть пустой invest = сжигание денег.
+ */
+function ordersForSend(): Order[] {
+    return pendingOrders.filter(o => {
+        if (o.type === 1) return o.investments > 0 && o.tiles.length > 0;
+        return true;
+    });
+}
+
+/**
+ * Защитная подрезка invest-суммы, если бюджет уменьшился из-за других
+ * приказов (покупка войск, подарок). Вызывается из renderOrders перед
+ * рендером списка.
+ */
+function reconcileInvestBudget(): void {
+    if (isOrderingBlocked()) return;
+    const max = maxInvestAmount();
+    const raw = parseInt(investAmountEl.value, 10) || 0;
+    if (raw > max) {
+        investAmountEl.value = String(max);
+        for (let i = 0; i < pendingOrders.length; i++) {
+            const o = pendingOrders[i]!;
+            if (o.type === 1) {
+                pendingOrders[i] = { ...o, investments: max };
+                break;
+            }
+        }
+    }
+}
+
 // ==================== Order 4 modal ====================
 
 function renderOrderBuyCost(): void {
@@ -968,12 +1083,14 @@ orderBuyBtn.addEventListener('click', () => {
 
 ordersResetBtn.addEventListener('click', () => {
     if (isOrderingBlocked()) return;
-    if (pendingOrders.length === 0) return;
     openConfirmModal({
         title: 'Сбросить все приказы?',
-        body: `Будет удалено приказов: ${pendingOrders.length}. Действие необратимо.`,
+        body: 'Будут удалены все приказы, включая инвестиции. Действие необратимо.',
         onConfirm: () => {
             pendingOrders = [];
+            investmentTiles.clear();
+            investAmountEl.value = '0';
+            syncInvestOrder();
             modeSelection.tiles = [];
             mapView.clearSelection();
             mapView.clearHighlight();
@@ -1010,15 +1127,11 @@ orderBuyOkEl.addEventListener('click', () => {
 
 investAmountEl.addEventListener('input', () => {
     sanitizeNumericInput(investAmountEl);
-    renderInvestStatus();
+    syncInvestOrder();
+    renderOrders();
 });
 
-investClearEl.addEventListener('click', () => {
-    investmentTiles.clear();
-    investAmountEl.value = '0';
-    applyModeHighlight();
-    renderInvestStatus();
-});
+investClearEl.addEventListener('click', clearInvest);
 
 
 // ==================== Troop modal (Orders 6/7/8) ====================
@@ -1380,8 +1493,8 @@ function handleInvestClick(tileId: number): void {
 
     if (investmentTiles.has(tileId)) investmentTiles.delete(tileId);
     else investmentTiles.add(tileId);
-    applyModeHighlight();
-    renderInvestStatus();
+    syncInvestOrder();
+    renderOrders();
 }
 
 /**
@@ -1519,10 +1632,6 @@ mapView.onTileClick((tileId) => {
 readyBtn.addEventListener('click', async () => {
     if (myReady) return;
 
-    // Финализируем отложенный invest-черновик — он попадёт в тот же
-    // запрос, что и остальные приказы.
-    commitInvestDraft();
-
     readyBtn.disabled = true;
     readyBtn.textContent = 'Отправка...';
 
@@ -1530,8 +1639,9 @@ readyBtn.addEventListener('click', async () => {
         const r = await fetch(`/lobby/${encodeURIComponent(CODE!)}/orders`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orders: ordersToJSON(pendingOrders), ready: true }),
+            body: JSON.stringify({ orders: ordersToJSON(ordersForSend()), ready: true }),
         });
+		
         if (!r.ok) {
             let msg = `Ошибка ${r.status}`;
             try { const j = await r.json() as { error?: string }; if (j.error) msg = j.error; } catch { /* */ }
@@ -1723,6 +1833,7 @@ async function bootstrap(): Promise<void> {
             viewingIndex = 0;
         }
     }
+    syncInvestOrder();
     renderAll();
 
     eventSource = new EventSource(`/lobby/${encodeURIComponent(CODE!)}/events`);
@@ -1762,6 +1873,7 @@ async function bootstrap(): Promise<void> {
                     if (w) {
                         youAreHost = w.youAreHost;
                         yourCountryIdx = w.yourCountryIdx;
+                        syncInvestOrder();
                         renderAll();
                     }
                 })();
@@ -1777,9 +1889,9 @@ async function bootstrap(): Promise<void> {
 
             case 'turnStarted':
                 myReady = false;
-                pendingOrders = [];
-                investmentTiles.clear();
-                investAmountEl.value = '0';
+                // Invest-черновик персистентен: сохраняем его, сбрасываем всё остальное.
+                pendingOrders = pendingOrders.filter(o => o.type === 1);
+                syncInvestOrder();
                 modeSelection.tiles = [];
                 closeAllOrderModals();
                 mapView.clearSelection();
@@ -1813,10 +1925,11 @@ async function bootstrap(): Promise<void> {
                 if (wasAtEnd) viewingIndex = turns.length - 1;
 
                 accumulatedOrders = [];
-                pendingOrders = [];
+                // Invest-черновик персистентен: сохраняем, пересинхронизируем
+                // owner-ссылки (currentState уже заменён выше).
+                pendingOrders = pendingOrders.filter(o => o.type === 1);
+                syncInvestOrder();
                 myReady = false;
-                investmentTiles.clear();
-                investAmountEl.value = '0';
                 modeSelection.tiles = [];
                 closeAllOrderModals();
                 mapView.clearSelection();
