@@ -178,22 +178,43 @@ export function renderEditor(overlay, points, colors, fillAlpha, strokeColor, st
     const ctx = overlay.getContext('2d');
     ctx.clearRect(0, 0, overlay.width, overlay.height);
 
+    // Кэш ячеек (без изменений)
     if (points.length >= 2) {
-        if (!state.cellsCanvas || state.cellsCanvas.width !== overlay.width || state.cellsCanvas.height !== overlay.height) {
+        if (!state.cellsCanvas ||
+            state.cellsCanvas.width  !== overlay.width ||
+            state.cellsCanvas.height !== overlay.height) {
             state.cellsCanvas = updateCellsCanvas(overlay, points, colors);
         }
-        ctx.globalAlpha = fillAlpha;
-        ctx.drawImage(state.cellsCanvas, 0, 0);
-        ctx.globalAlpha = 1.0;
     }
 
-    if (state.brushCanvas) {
-        // Применяем мазки
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.drawImage(state.brushCanvas, 0, 0);
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = fillAlpha;
-        ctx.drawImage(state.brushCanvas, 0, 0);
-        ctx.globalAlpha = 1.0;
+    // Единый непрозрачный слой: ячейки + мазки
+    let combined = state.combinedCanvas;
+    if (!combined ||
+        combined.width  !== overlay.width ||
+        combined.height !== overlay.height) {
+        combined = state.combinedCanvas = document.createElement('canvas');
+        combined.width  = overlay.width;
+        combined.height = overlay.height;
     }
+    const cctx = combined.getContext('2d');
+    cctx.globalAlpha = 1;
+    cctx.globalCompositeOperation = 'source-over';
+    cctx.clearRect(0, 0, combined.width, combined.height);
+
+    if (state.cellsCanvas) {
+        cctx.drawImage(state.cellsCanvas, 0, 0);
+    }
+    if (state.brushCanvas) {
+        // Один проход: мазок просто перекрывает ячейки.
+        // Антиалиасинг границы учитывается только здесь.
+        cctx.drawImage(state.brushCanvas, 0, 0);
+		if (state.liveStrokeCanvas) {
+			cctx.drawImage(state.liveStrokeCanvas, 0, 0);
+		}
+    }
+
+    // Накладываем объединённый слой на overlay с нужной прозрачностью.
+    ctx.globalAlpha = fillAlpha;
+    ctx.drawImage(combined, 0, 0);
+    ctx.globalAlpha = 1.0;
 }

@@ -10,31 +10,46 @@ import {
 import { redrawPoints, applyTransform, fitToScreen, zoomAt, renderEditor } from './rendering.js';
 
 // Вспомогательные функции для рисования кистью
-function drawBrushDot(x, y) {
-    if (!state.brushCanvas) return;
-    const ctx = state.brushCanvas.getContext('2d');
-    const radius = state.brushSize / state.scale;
-    // глобальная прозрачность теперь применяется при наложении слоя
+function paintStrokeTo(ctx, pts, radius, color) {
+    if (!pts.length) return;
     ctx.globalAlpha = 1.0;
-    ctx.fillStyle = `rgb(${state.brushColor[0]}, ${state.brushColor[1]}, ${state.brushColor[2]})`;
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
-}
-
-function drawBrushLine(x0, y0, x1, y1) {
-    if (!state.brushCanvas) return;
-    const ctx = state.brushCanvas.getContext('2d');
-    const radius = state.brushSize / state.scale;
-    ctx.globalAlpha = 1.0;
-    ctx.strokeStyle = `rgb(${state.brushColor[0]}, ${state.brushColor[1]}, ${state.brushColor[2]})`;
-    ctx.lineWidth = radius * 2;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.lineWidth = radius * 2;
+
+    if (pts.length === 1) {
+        ctx.beginPath();
+        ctx.arc(pts[0].x, pts[0].y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+    // ОДИН путь — ОДИН stroke → никаких AA-швов внутри мазка
     ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
+}
+
+function renderLiveStroke() {
+    const c = state.liveStrokeCanvas;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    paintStrokeTo(ctx, state.liveStrokePoints, state.liveStrokeRadius, state.liveStrokeColor);
+}
+
+function commitLiveStroke() {
+    if (!state.liveStrokeCanvas || !state.liveStrokePoints.length) return;
+    // Переносим готовый мазок в накопительный brushCanvas одним drawImage
+    const bctx = state.brushCanvas.getContext('2d');
+    bctx.drawImage(state.liveStrokeCanvas, 0, 0);
+    // Чистим live-слой
+    const lctx = state.liveStrokeCanvas.getContext('2d');
+    lctx.clearRect(0, 0, state.liveStrokeCanvas.width, state.liveStrokeCanvas.height);
+    state.liveStrokePoints = [];
 }
 
 function updateCursor(viewport) {
@@ -98,16 +113,24 @@ export function initInteractions(viewport, preview, overlay) {
                 return;
             }
 
-            if (state.editorTool === 'brush') {
-                // Начать рисование
-                state.isDrawing = true;
-                state.lastDrawX = imageX;
-                state.lastDrawY = imageY;
-                drawBrushDot(imageX, imageY);
-                renderEditor(overlay, state.points, state.editorColors, state.fillAlpha, state.strokeColor, state.strokeAlpha);
-                e.preventDefault();
-                return;
-            }
+			if (state.editorTool === 'brush') {
+				if (!state.liveStrokeCanvas) {
+					state.liveStrokeCanvas = document.createElement('canvas');
+				}
+				state.liveStrokeCanvas.width  = overlay.width;
+				state.liveStrokeCanvas.height = overlay.height;
+
+				state.liveStrokePoints = [{ x: imageX, y: imageY }];
+				state.liveStrokeRadius = state.brushSize / state.scale;   // фиксируем ОДИН раз
+				state.liveStrokeColor  = `rgb(${state.brushColor[0]}, ${state.brushColor[1]}, ${state.brushColor[2]})`;
+
+				state.isDrawing = true;
+				renderLiveStroke();
+				renderEditor(overlay, state.points, state.editorColors,
+							 state.fillAlpha, state.strokeColor, state.strokeAlpha);
+				e.preventDefault();
+				return;
+			}
             return;
         }
 
@@ -165,17 +188,15 @@ export function initInteractions(viewport, preview, overlay) {
 
     viewport.addEventListener('pointermove', (e) => {
         // Редактор: рисование
-        if (state.mode === 'editor' && state.isDrawing) {
-            const coords = getImageCoords(e, viewport, state.scale, state.translateX, state.translateY);
-            const x = coords.imageX;
-            const y = coords.imageY;
-            drawBrushLine(state.lastDrawX, state.lastDrawY, x, y);
-            state.lastDrawX = x;
-            state.lastDrawY = y;
-            renderEditor(overlay, state.points, state.editorColors, state.fillAlpha, state.strokeColor, state.strokeAlpha);
-            e.preventDefault();
-            return;
-        }
+		if (state.mode === 'editor' && state.isDrawing) {
+			const coords = getImageCoords(e, viewport, state.scale, state.translateX, state.translateY);
+			state.liveStrokePoints.push({ x: coords.imageX, y: coords.imageY });
+			renderLiveStroke();
+			renderEditor(overlay, state.points, state.editorColors,
+						 state.fillAlpha, state.strokeColor, state.strokeAlpha);
+			e.preventDefault();
+			return;
+		}
         if (state.mode === 'editor') return; // другие события в редакторе игнорируем
 
         // Обычный режим
@@ -231,11 +252,14 @@ export function initInteractions(viewport, preview, overlay) {
 
     viewport.addEventListener('pointerup', (e) => {
         // Редактор: завершение рисования
-        if (state.mode === 'editor' && state.isDrawing) {
-            state.isDrawing = false;
-            e.preventDefault();
-            return;
-        }
+		if (state.mode === 'editor' && state.isDrawing) {
+			commitLiveStroke();
+			state.isDrawing = false;
+			renderEditor(overlay, state.points, state.editorColors,
+						 state.fillAlpha, state.strokeColor, state.strokeAlpha);
+			e.preventDefault();
+			return;
+		}
         if (state.mode === 'editor') return;
 
         if (e.button !== 0) return;

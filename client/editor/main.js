@@ -77,6 +77,8 @@ function enterEditorMode() {
         alert('Загрузите изображение и поставьте минимум 2 точки.');
         return;
     }
+	state.liveStrokePoints = [];
+	state.liveStrokeCanvas = null;   // создастся заново при первом мазке
     state.editorColors = generateUniqueColors(state.points.length);
 
     if (!state.brushCanvas) {
@@ -107,6 +109,8 @@ function exitEditorMode() {
     redrawPoints(overlay);
     updateButtons();
     updateCursor();
+	state.liveStrokePoints = [];
+	state.liveStrokeCanvas = null;
 	state.cellsCanvas = null;
 }
 

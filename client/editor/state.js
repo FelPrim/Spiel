@@ -45,7 +45,12 @@ export const state = {
     lastDrawY: 0,
     cellsCanvas: null,
 	originalFile: null,
-	editorToolChangeCallback: null // устанавливается в main.js
+	editorToolChangeCallback: null, // устанавливается в main.js
+	combinedCanvas: null,
+	liveStrokeCanvas: null,    // canvas для текущего (незавершённого) мазка
+liveStrokePoints: [],      // точки текущего мазка
+liveStrokeRadius: 0,       // зафиксированный радиус
+liveStrokeColor: '#000',   // зафиксированный цвет
 };
 
 export function setMode(newMode) {
@@ -88,4 +93,6 @@ export function resetTransientState() {
     state.brushColor = [0, 0, 0];
     state.brushCanvas = null;
     state.isDrawing = false;
+state.liveStrokePoints = [];
+state.liveStrokeCanvas = null;
 }

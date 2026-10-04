@@ -316,7 +316,9 @@ export function validateOrders(state: GameState, orders: Order[]): Order[] {
       }
       case 7: {
         if (!tileSet.has(o.from) || !tileSet.has(o.target_from) || !tileSet.has(o.target_to)) break;
-        if (o.from === o.target_from) break;
+        // from === target_from допустимо: одна и та же армия атакует и
+        // поддерживает атаку (её "поддержка" путешествует вместе с ней
+        // и считается частью того же incoming-группы на target_to).
         if (!o.target_to.neighbours.includes(o.target_from)) break;
         if (!o.target_to.neighbours.includes(o.from)) break;
         if (o.infantry < 0 || o.cannons < 0) break;

@@ -324,8 +324,10 @@ function renderCountryInfo(): void {
         countryTilesEl.textContent = 'Провинций: —';
         return;
     }
+	const income = Math.round(c.tiles.reduce((s, t) => s + t.economy, 0) * 1000) / 1000;
+	countryTreasEl.textContent = `Казна: ${c.treasury}/${income} ₵`;
     countryNameEl.textContent = `Страна #${c.id}`;
-    countryTreasEl.textContent = `Казна: ${c.treasury} ₵`;
+   // countryTreasEl.textContent = `Казна: ${c.treasury} ₵`;
     countryTilesEl.textContent = `Провинций: ${c.tiles.length}`;
 }
 
@@ -1014,14 +1016,22 @@ function handleSupportAttackClick(tileId: number): void {
     }
 
     if (sel.length === 1) {
+        // шаг 2: выбор target_from. Разрешено tileId === from (см. §validateOrders).
+        // Отмена шага — правый клик или Esc.
         const fromId = sel[0]!;
-        if (tileId === fromId) { sel.length = 0; mapView.clearSelection(); return; }
+        if (tileId === fromId) {
+            sel.push(tileId);
+            mapView.setHighlight([fromId]);  // подсветка одна, но семантика сохранена
+            return;
+        }
         sel.push(tileId);
-        mapView.selectTile(tileId);
+        mapView.setHighlight([fromId, tileId]);
         return;
     }
 
     const [fromId, targetFromId] = sel as [number, number];
+    // target_to должен быть соседом и from, и target_from.
+    // Совпадение с from/target_from запрещено (иначе это вырожденный случай).
     if (tileId === fromId || tileId === targetFromId) {
         sel.length = 0;
         mapView.clearSelection();
