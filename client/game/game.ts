@@ -222,35 +222,98 @@ function renderOwners(state: GameState | null): void {
     mapView.setCountries(list);
 }
 
+interface ArmyBadge {
+    inf: number;
+    can: number;
+    color?: string;
+}
+
 function renderArmies(state: GameState | null): void {
     if (!state) return;
     const info = mapView.loadedMapData?.info;
     const live = !isViewingHistory();
-    const byTileId = new Map<number, { inf: number; can: number; color?: string }>();
+    const byTileId = new Map<number, Array<{ inf: number; can: number; color?: string }>>();
+
+    const colorOf = (
+        owner: { capital: Tile | null } | null | undefined,
+    ): string | undefined => {
+        if (!owner || !owner.capital || !info) return undefined;
+        const col = info.colors[owner.capital.id];
+        if (col == null) return undefined;
+        return '#' + (col >>> 0).toString(16).padStart(6, '0');
+    };
+
+    // ── Превью покупок в live-режиме ──
+    // pending Order 4 ещё не применён. Если своя столица — прибавляем
+    // к defenders; если оккупированная — показываем отдельным
+    // phantom-бейджем ниже defenders (как это будет после applyTurn).
+    let myBuyInf = 0, myBuyCan = 0;
+    let myCapitalId: number | null = null;
+    let myCapitalOwned = false;
+    if (live && yourCountryIdx != null) {
+        const me = state.countries[yourCountryIdx];
+        const cap = me?.capital ?? null;
+        if (cap) {
+            myCapitalId = cap.id;
+            myCapitalOwned = cap.owner != null && cap.owner.id === yourCountryIdx;
+        }
+        for (const o of pendingOrders) {
+            if (o.type === 4) {
+                myBuyInf += o.infantry;
+                myBuyCan += o.cannons;
+            }
+        }
+    }
 
     for (const tile of state.tiles) {
+        const badges: Array<{ inf: number; can: number; color?: string }> = [];
+
+        // 1. Garrison (defenders). В live — за вычетом pending
+        // приказов из этого тайла (Order 6/7/8), плюс pending покупки
+        // в свою столицу.
         let inf = tile.defenders.army.infantry;
         let can = tile.defenders.army.cannons;
-
-        // На живом ходу показываем остаток после pending-приказов,
-        // чтобы игрок сразу видел, сколько войск останется в тайле.
         if (live) {
             const claimed = claimedFrom(tile.id);
             inf = Math.max(0, inf - claimed.inf);
             can = Math.max(0, can - claimed.can);
         }
-
-        if (inf === 0 && can === 0) continue;
-
-        let color: string | undefined;
-        if (tile.owner && info && tile.owner.capital) {
-            const col = info.colors[tile.owner.capital.id];
-            if (col != null) {
-                color = '#' + (col >>> 0).toString(16).padStart(6, '0');
-            }
+        if (myCapitalOwned && myCapitalId === tile.id) {
+            inf += myBuyInf;
+            can += myBuyCan;
+        }
+        if (inf > 0 || can > 0) {
+            badges.push({ inf, can, color: colorOf(tile.owner) });
         }
 
-        byTileId.set(tile.id, { inf, can, color });
+        // 2. Phantom arrivals (Order 4 в оккупированной столице) —
+        // из уже применённого состояния (movement-снимок или история).
+        // В финале хода arrived пуст, поэтому «живых» фантомов тут нет.
+        for (let i = 0; i < tile.neighbours.length; i++) {
+            const g = tile.arrived[i];
+            if (!g || !g.phantomOwner) continue;
+            if (g.army.infantry === 0 && g.army.cannons === 0) continue;
+            badges.push({
+                inf: g.army.infantry,
+                can: g.army.cannons,
+                color: colorOf(g.phantomOwner),
+            });
+        }
+
+        // 3. Live-превью фантома: pending Order 4 в оккупированной
+        // столице, до применения хода.
+        if (
+            live
+            && !myCapitalOwned
+            && myCapitalId === tile.id
+            && (myBuyInf > 0 || myBuyCan > 0)
+            && yourCountryIdx != null
+        ) {
+            const me = state.countries[yourCountryIdx];
+            badges.push({ inf: myBuyInf, can: myBuyCan, color: colorOf(me) });
+        }
+
+        if (badges.length > 0) byTileId.set(tile.id, badges);
     }
     mapView.setArmies(byTileId);
 }

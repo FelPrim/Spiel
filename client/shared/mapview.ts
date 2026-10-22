@@ -484,50 +484,53 @@ export class MapView {
         countryOverlayCtx.putImageData(imgData, 0, 0);
     }
 
-        /**
-     * Численность армий над провинциями — визуально как подписи стрелок:
-     * «● inf / ▲ can» через текстовые глифы с тем же соотношением шрифтов,
-     * что в arrow.ts (TRIANGLE_SCALE = 2.2, CIRCLE_SCALE = TRIANGLE_SCALE * 1.27
-     * и circleNudge для вертикального выравнивания кружка).
+    /**
+     * Численность армий над провинциями.
+     *
+     * На каждый тайл — массив бейджей. Бейджи рисуются столбиком,
+     * вертикальный блок центрирован вокруг точки `points[tileId]`
+     * со сдвигом вниз на ARMY_OFFSET (совпадает с положением одного
+     * бейджа в старой версии). Порядок массива = порядок сверху вниз:
+     * garrison первым, phantom-восставшие ниже.
      */
-    setArmies(byTileId: Map<number, { inf: number; can: number; color?: string }>): void {
+    /**
+     * Численность армий над провинциями. На каждый тайл — массив бейджей.
+     * Порядок массива = порядок сверху вниз: garrison первым, phantom
+     * (восставшие в оккупированной столице) ниже. Столбик центрирован
+     * вокруг `points[tileId] + ARMY_OFFSET`.
+     */
+    setArmies(
+        byTileId: Map<number, Array<{ inf: number; can: number; color?: string }>>,
+    ): void {
         const d = this.loadedMapData;
         if (!d) return;
         const { W, H, armyOverlayCtx: ctx, tileCenters, info } = d;
         ctx.clearRect(0, 0, W, H);
         if (byTileId.size === 0) return;
 
-        const FONT_PX = 20;
+        const FONT_PX = 14;
         const TRIANGLE_SCALE = 2.2;
         const CIRCLE_SCALE = TRIANGLE_SCALE * 1.27;
         const circleFontSize = FONT_PX * CIRCLE_SCALE;
         const triangleFontSize = FONT_PX * TRIANGLE_SCALE;
         const circleNudge = -circleFontSize * 0.06;
-        const ARMY_OFFSET = Math.round(FONT_PX / 2);
+        const ARMY_OFFSET = 6;
+        const lineHeight = Math.max(circleFontSize, triangleFontSize) * 1.05;
 
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
 
         const pts = info.points;
-        for (const [tileId, { inf, can, color }] of byTileId) {
-            if (inf === 0 && can === 0) continue;
-            if (!Number.isInteger(tileId) || tileId < 0 || tileId >= info.colors.length) continue;
 
-            let cx: number | null = null, baseY: number | null = null;
-            if (pts && pts[tileId]) { cx = pts[tileId]!.x; baseY = pts[tileId]!.y; }
-            if (cx == null || baseY == null) {
-                const c = tileCenters[tileId];
-                if (!c || c.x < 0) continue;
-                cx = c.x; baseY = c.y;
-            }
-            const cy = baseY + ARMY_OFFSET;
-
-            const fill = color ?? '#222';
+        const drawOne = (
+            cx: number, cy: number,
+            inf: number, can: number,
+            fill: string,
+        ): void => {
             const infStr = String(inf);
             const canStr = String(can);
             const slashStr = ' / ';
 
-            // Ширины каждой части считаем с её собственным font-size.
             ctx.font = `${circleFontSize}px sans-serif`;
             const wCircle = ctx.measureText('●').width;
             ctx.font = `${FONT_PX}px sans-serif`;
@@ -540,32 +543,50 @@ export class MapView {
             const totalW = wCircle + wInf + wSlash + wTriangle + wCan;
             let x = cx - totalW / 2;
 
-            // ● — цвет страны, со сдвигом вверх (circleNudge)
             ctx.font = `${circleFontSize}px sans-serif`;
             ctx.fillStyle = fill;
             ctx.fillText('●', x, cy + circleNudge);
             x += wCircle;
 
-            // inf — тёмно-серый, как в подписях стрелок
             ctx.font = `${FONT_PX}px sans-serif`;
             ctx.fillStyle = '#222';
             ctx.fillText(infStr, x, cy);
             x += wInf;
 
-            // " / "
             ctx.fillText(slashStr, x, cy);
             x += wSlash;
 
-            // ▲ — цвет страны
             ctx.font = `${triangleFontSize}px sans-serif`;
             ctx.fillStyle = fill;
             ctx.fillText('▲', x, cy);
             x += wTriangle;
 
-            // can — тёмно-серый
             ctx.font = `${FONT_PX}px sans-serif`;
             ctx.fillStyle = '#222';
             ctx.fillText(canStr, x, cy);
+        };
+
+        for (const [tileId, badges] of byTileId) {
+            if (badges.length === 0) continue;
+            if (!Number.isInteger(tileId) || tileId < 0 || tileId >= info.colors.length) continue;
+
+            let cx: number | null = null, baseY: number | null = null;
+            if (pts && pts[tileId]) { cx = pts[tileId]!.x; baseY = pts[tileId]!.y; }
+            if (cx == null || baseY == null) {
+                const c = tileCenters[tileId];
+                if (!c || c.x < 0) continue;
+                cx = c.x; baseY = c.y;
+            }
+
+            const centerY = baseY + ARMY_OFFSET;
+            const totalH = badges.length * lineHeight;
+            const startY = centerY - (totalH - lineHeight) / 2;
+
+            for (let i = 0; i < badges.length; i++) {
+                const b = badges[i]!;
+                if (b.inf === 0 && b.can === 0) continue;
+                drawOne(cx, startY + i * lineHeight, b.inf, b.can, b.color ?? '#222');
+            }
         }
     }
 	static readonly COUNTRY_ALPHA = 160;

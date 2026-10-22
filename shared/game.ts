@@ -1,3 +1,4 @@
+// 22/10/2026
 // =====================================================================
 // Types
 // =====================================================================
@@ -28,7 +29,15 @@ export interface Support {
 
 export interface ArmyGroup {
   army: Army;
-  support: Support[]; // indexed by neighbour of the *target* tile
+  support: Support[];
+  /**
+   * Если задано, страна-атакующий берётся отсюда, а не из
+   * neighbours[i].ownerprevmove. Используется Order 4, когда столица
+   * оккупирована: купленные юниты сражаются за покупателя.
+   * Не сериализуется — фантомные атакующие живут только в пределах
+   * одного хода (после шага 7 tile.arrived обнуляется).
+   */
+  phantomOwner?: Country | null;
 }
 
 export interface Tile {
@@ -371,15 +380,13 @@ export function validateOrders(state: GameState, orders: Order[]): Order[] {
 
 export interface ApplyTurnOptions {
   /**
-   * Вызывается между фазой движения (шаг 6) и главной битвой (шаг 7).
-   * Состояние уже мутировано (движение разрешено, `ownerprevmove`
-   * переключён, экономика пересчитана), но:
-   *   - `turn` ещё не инкрементирован,
-   *   - битвы не разрешены,
-   *   - `Country.tiles` не перестроены,
-   *   - income не начислен.
-   * Вызывающий обязан немедленно снять копию: дальнейшие шаги applyTurn
-   * мутируют те же объекты.
+   * Вызывается между фазой движения (шаг 6) + размещением купленных
+   * юнитов (шаг 6.5) и главной битвой (шаг 7). На момент вызова:
+   *   - движение разрешено, `ownerprevmove` переключён;
+   *   - купленные юниты уже в `defenders.army` (своя столица)
+   *     или в `arrived` как phantom-группы (оккупированная);
+   *   - `turn` ещё не инкрементирован, битвы не разрешены,
+   *     `Country.tiles` не перестроены, income не начислен.
    */
   onMovementPhase?: (state: GameState) => void;
 }
@@ -511,14 +518,11 @@ export function applyTurn(
     o.recipient.gifts += o.gift;
     o.owner.treasury -= o.gift;
   }
+  const affordableOrder4: Extract<Order, { type: 4 }>[] = [];
   for (const o of order4) {
     if (!affordable.get(o.owner)) continue;
-    const cap = o.owner.capital;
-    if (cap) {
-      cap.defenders.army.infantry += o.infantry;
-      cap.defenders.army.cannons += o.cannons;
-    }
     o.owner.treasury -= o.infantry * INFANTRY_COST + o.cannons * CANNON_COST;
+    affordableOrder4.push(o);
   }
 
   // 5. Economy formula.
@@ -532,8 +536,49 @@ export function applyTurn(
 
   // 6. Movement phase.
   resolveMovementPhase(state);
-  if (options?.onMovementPhase) options.onMovementPhase(state);
 
+
+  // 6.5. Order 4 — размещение купленных юнитов.
+  //
+  // Если столица всё ещё принадлежит покупателю (ownerprevmove === buyer),
+  // юниты идут в defenders.army как обычно.
+  //
+  // Если столица оккупирована, юниты спавнятся как «фантомный атакующий»
+  // в arrived: они принадлежат покупателю (phantomOwner) и в главной
+  // битве сражаются против оккупанта, а не вливаются в его армию.
+  for (const o of affordableOrder4) {
+    const cap = o.owner.capital;
+    if (!cap) continue;
+    if (cap.ownerprevmove === o.owner) {
+      cap.defenders.army.infantry += o.infantry;
+      cap.defenders.army.cannons += o.cannons;
+      continue;
+    }
+    // Ищем свободный слот в arrived (или уже существующую фантомную
+    // группу этого же покупателя, если несколько Order 4 подряд).
+    let idx = -1;
+    for (let i = 0; i < cap.arrived.length; i++) {
+      if (!cap.arrived[i]) { idx = i; break; }
+    }
+    if (idx < 0) {
+      for (let i = 0; i < cap.arrived.length; i++) {
+        const g = cap.arrived[i];
+        if (g && g.phantomOwner === o.owner) { idx = i; break; }
+      }
+    }
+    if (idx < 0) continue; // нет свободного слота — крайне редко
+    if (!cap.arrived[idx]) {
+      const g = createArmyGroup(cap);
+      g.phantomOwner = o.owner;
+      cap.arrived[idx] = g;
+    }
+    const g = cap.arrived[idx]!;
+    g.army.infantry += o.infantry;
+    g.army.cannons += o.cannons;
+  }
+  
+  if (options?.onMovementPhase) options.onMovementPhase(state);
+  
   // 7. Main battle phase.
   const pendingRetreats: RetreatPlan[] = [];
   resolveMainBattlePhase(state, pendingRetreats);
@@ -882,6 +927,7 @@ function computeBattlePlan(tile: Tile, state: GameState): BattlePlan | null {
   for (let i = 0; i < tile.neighbours.length; i++) {
     const g = tile.arrived[i];
     if (!g) continue;
+    if (g.phantomOwner) continue; // фантом всегда атакует, не сливается
     const nbr = tile.neighbours[i]!;
     if (nbr.ownerprevmove === defenderCountry && defenderCountry !== null) {
       tile.defenders.army.infantrywithoutbonus += g.army.infantry;
@@ -926,7 +972,7 @@ function computeBattlePlan(tile: Tile, state: GameState): BattlePlan | null {
   for (const i of attackerIndices) {
     const g = tile.arrived[i]!;
     const nbr = tile.neighbours[i]!;
-    const country = nbr.ownerprevmove;
+    const country = g.phantomOwner ?? nbr.ownerprevmove;
     const ci = country ? state.countries.indexOf(country) : -1;
     let p = byCountry.get(ci);
     if (!p) {
@@ -1360,6 +1406,13 @@ export interface SerializedSupport {
 export interface SerializedArmyGroup {
   army: SerializedArmy;
   support: SerializedSupport[];
+  /**
+   * Если задан — эта группа принадлежит указанной стране, а не
+   * `neighbours[i].ownerprevmove`. Появляется у «фантомных восставших»
+   * (Order 4 в оккупированной столице). Опционально, чтобы состояния
+   * без фантомов сериализовались побайтово как раньше.
+   */
+  phantomOwner?: number | null;   // country id
 }
 
 export interface SerializedTile {
@@ -1404,7 +1457,7 @@ function armyToJSON(a: Army): SerializedArmy {
 }
 
 function armyGroupToJSON(g: ArmyGroup): SerializedArmyGroup {
-  return {
+  const out: SerializedArmyGroup = {
     army: armyToJSON(g.army),
     support: g.support.map(s => ({
       infantry: s.infantry,
@@ -1412,6 +1465,10 @@ function armyGroupToJSON(g: ArmyGroup): SerializedArmyGroup {
       sourceArmy: s.sourceArmy.locationmovement.id,
     })),
   };
+  if (g.phantomOwner !== undefined) {
+    out.phantomOwner = g.phantomOwner ? g.phantomOwner.id : null;
+  }
+  return out;
 }
 
 export function toJSON(state: GameState): SerializedGameState {
@@ -1465,11 +1522,24 @@ function supportFromJSON(ss: SerializedSupport, tiles: Tile[]): Support {
   };
 }
 
-function armyGroupFromJSON(sg: SerializedArmyGroup, tiles: Tile[]): ArmyGroup {
-  return {
+function armyGroupFromJSON(
+  sg: SerializedArmyGroup,
+  tiles: Tile[],
+  countries: Country[],
+): ArmyGroup {
+  const g: ArmyGroup = {
     army: armyFromJSON(sg.army, tiles),
     support: sg.support.map(ss => supportFromJSON(ss, tiles)),
   };
+  if (sg.phantomOwner !== undefined) {
+    if (sg.phantomOwner === null) {
+      g.phantomOwner = null;
+    } else {
+      const c = countries[sg.phantomOwner];
+      if (c) g.phantomOwner = c;
+    }
+  }
+  return g;
 }
 
 export function fromJSON(json: SerializedGameState): GameState {
@@ -1568,8 +1638,10 @@ export function fromJSON(json: SerializedGameState): GameState {
   for (let i = 0; i < json.tiles.length; i++) {
     const st = json.tiles[i]!;
     const t = tiles[i]!;
-    t.incoming = st.incoming.map(sg => (sg ? armyGroupFromJSON(sg, tiles) : null));
-    t.arrived = st.arrived.map(sg => (sg ? armyGroupFromJSON(sg, tiles) : null));
+    t.incoming = st.incoming.map(sg =>
+      (sg ? armyGroupFromJSON(sg, tiles, countries) : null));
+    t.arrived = st.arrived.map(sg =>
+      (sg ? armyGroupFromJSON(sg, tiles, countries) : null));
   }
 
   return {
