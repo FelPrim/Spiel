@@ -29,10 +29,18 @@ export async function exportVoronoi(overlay, downloadElement) {
     // Рисуем ячейки непрозрачными, без мазков
     for (let i = 0; i < state.points.length; i++) {
         const [r, g, b] = intToRgb(colors[i]);
+        const colorStr = `rgb(${r}, ${g}, ${b})`;
+        
         vCtx.beginPath();
         voronoi.renderCell(i, vCtx);
-        vCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        vCtx.fillStyle = colorStr;
         vCtx.fill();
+        
+        // КРИТИЧЕСКИ ВАЖНО: обводка закрывает AA-швы 
+        // (антиалиасинговые зазоры) между соседними ячейками
+        vCtx.strokeStyle = colorStr;
+        vCtx.lineWidth = 1;
+        vCtx.stroke();
     }
 	if (state.brushCanvas) {
 		vCtx.drawImage(state.brushCanvas, 0, 0);

@@ -43,12 +43,35 @@ function renderLiveStroke() {
 
 function commitLiveStroke() {
     if (!state.liveStrokeCanvas || !state.liveStrokePoints.length) return;
-    // Переносим готовый мазок в накопительный brushCanvas одним drawImage
+    
+    const lctx = state.liveStrokeCanvas.getContext('2d');
+    const width = state.liveStrokeCanvas.width;
+    const height = state.liveStrokeCanvas.height;
+
+    // 1. Берем пиксели ТОЛЬКО текущего мазка
+    const imgData = lctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+    const [r, g, b] = state.brushColor;
+
+    // 2. Пороговая обработка: убиваем полупрозрачные края, ставим точный цвет
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] >= 128) {
+            data[i] = r;
+            data[i + 1] = g;
+            data[i + 2] = b;
+            data[i + 3] = 255; // Делаем пиксель абсолютно плотным
+        } else {
+            data[i + 3] = 0;   // Всё, что полупрозрачное — стираем
+        }
+    }
+    lctx.putImageData(imgData, 0, 0);
+
+    // 3. Переносим уже "жесткий" мазок в накопительный слой
     const bctx = state.brushCanvas.getContext('2d');
     bctx.drawImage(state.liveStrokeCanvas, 0, 0);
-    // Чистим live-слой
-    const lctx = state.liveStrokeCanvas.getContext('2d');
-    lctx.clearRect(0, 0, state.liveStrokeCanvas.width, state.liveStrokeCanvas.height);
+
+    // 4. Чистим live-слой для следующего мазка
+    lctx.clearRect(0, 0, width, height);
     state.liveStrokePoints = [];
 }
 
