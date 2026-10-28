@@ -477,3 +477,34 @@
 #invest-status #invest-clear:hover {
     background: rgba(200, 80, 80, 0.75);
 }
+
+/* ============ View mode bar (economy view) ============ */
+
+#view-mode-bar {
+    margin-top: 12px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+}
+
+#economy-view-btn {
+    width: 100%;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+#economy-view-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+#economy-view-btn.active {
+    background: rgba(80, 160, 80, 0.55);
+    border-color: rgba(120, 220, 120, 0.8);
+    font-weight: bold;
+}

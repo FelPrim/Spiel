@@ -51,6 +51,8 @@ const countryTilesEl  = requireEl<HTMLDivElement>('country-tiles');
 const countEl         = requireEl<HTMLSpanElement>('participants-count');
 const listEl          = requireEl<HTMLUListElement>('participants-list');
 const afkBtn          = requireEl<HTMLButtonElement>('afk-toggle');
+const economyBtn      = requireEl<HTMLButtonElement>('economy-view-btn');
+
 
 const ordersPanel     = requireEl<HTMLDivElement>('orders-panel');
 const ordersListEl    = requireEl<HTMLUListElement>('orders-list');
@@ -125,6 +127,8 @@ let lastHost: string | null = null;
 let lastMapVersion = -1;
 let isAfk = false;
 let lastAfk: Set<string> = new Set();
+
+let economyViewEnabled = false;
 
 let pendingOrders: Order[] = [];
 let myReady = false;
@@ -209,8 +213,12 @@ function getDisplayState(): GameState | null {
 
 function renderOwners(state: GameState | null): void {
     if (!state) return;
+    if (economyViewEnabled) {
+        renderEconomyColors(state);
+        return;
+    }
     const info = mapView.loadedMapData?.info;
-    if (!info) return;
+    if (!info) return;;
     const list: Array<{ tileId: number; color?: number }> = [];
     for (const c of state.countries) {
         if (c.capital == null) continue;
@@ -230,6 +238,10 @@ interface ArmyBadge {
 
 function renderArmies(state: GameState | null): void {
     if (!state) return;
+    if (economyViewEnabled) {
+        renderEconomyNumbers(state);
+        return;
+    }
     const info = mapView.loadedMapData?.info;
     const live = !isViewingHistory();
     const byTileId = new Map<number, Array<{ inf: number; can: number; color?: string }>>();
@@ -331,6 +343,61 @@ function ownerColor(ownerIdx: number | undefined): string {
     const col = info.colors[c.capital.id];
     if (col == null) return '#e11d48';
     return '#' + (col >>> 0).toString(16).padStart(6, '0');
+}
+
+/**
+ * Палитра градиента экономик:
+ *   0.0 — красный (худшая), 0.5 — жёлтый, 1.0 — зелёный (лучшая).
+ * Возвращает упакованный 24-битный RGB (как в info.colors / setCountries).
+ */
+const ECO_RED    = { r: 220, g: 38,  b: 38  };
+const ECO_YELLOW = { r: 234, g: 179, b: 8   };
+const ECO_GREEN  = { r: 22,  g: 163, b: 74  };
+
+function economyGradientColor(norm: number): number {
+    const n = Math.max(0, Math.min(1, norm));
+    let r: number, g: number, b: number;
+    if (n < 0.5) {
+        const t = n * 2;
+        r = Math.round(ECO_RED.r    + (ECO_YELLOW.r - ECO_RED.r)    * t);
+        g = Math.round(ECO_RED.g    + (ECO_YELLOW.g - ECO_RED.g)    * t);
+        b = Math.round(ECO_RED.b    + (ECO_YELLOW.b - ECO_RED.b)    * t);
+    } else {
+        const t = (n - 0.5) * 2;
+        r = Math.round(ECO_YELLOW.r + (ECO_GREEN.r  - ECO_YELLOW.r) * t);
+        g = Math.round(ECO_YELLOW.g + (ECO_GREEN.g  - ECO_YELLOW.g) * t);
+        b = Math.round(ECO_YELLOW.b + (ECO_GREEN.b  - ECO_YELLOW.b) * t);
+    }
+    return (r << 16) | (g << 8) | b;
+}
+
+/** Покрасить тайлы градиентом по экономике текущего отображаемого состояния. */
+function renderEconomyColors(state: GameState): void {
+    if (state.tiles.length === 0) {
+        mapView.setCountries([]);
+        return;
+    }
+    let minEco = Infinity, maxEco = -Infinity;
+    for (const t of state.tiles) {
+        if (t.economy < minEco) minEco = t.economy;
+        if (t.economy > maxEco) maxEco = t.economy;
+    }
+    const range = maxEco - minEco;
+    const list: Array<{ tileId: number; color: number }> = [];
+    for (const t of state.tiles) {
+        const norm = range < 1e-9 ? 0.5 : (t.economy - minEco) / range;
+        list.push({ tileId: t.id, color: economyGradientColor(norm) });
+    }
+    mapView.setCountries(list);
+}
+
+/** Числа экономик над тайлами (вместо бейджей армий). */
+function renderEconomyNumbers(state: GameState): void {
+    const byTileId = new Map<number, { value: number }>();
+    for (const t of state.tiles) {
+        byTileId.set(t.id, { value: Math.round(t.economy) });
+    }
+    mapView.setEconomies(byTileId);
 }
 
 function renderArrows(): void {
@@ -1805,6 +1872,12 @@ afkBtn.addEventListener('click', async () => {
     } catch (err) {
         mapStatus.textContent = 'Ошибка сети: ' + (err instanceof Error ? err.message : String(err));
     }
+});
+
+economyBtn.addEventListener('click', () => {
+    economyViewEnabled = !economyViewEnabled;
+    economyBtn.classList.toggle('active', economyViewEnabled);
+    renderAll();
 });
 
 // ==================== Сеть ====================

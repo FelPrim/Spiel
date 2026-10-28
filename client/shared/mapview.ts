@@ -589,6 +589,48 @@ export class MapView {
             }
         }
     }
+	
+	/**
+	 * Экономические значения над провинциями (режим «Просмотр экономик»).
+	 * В отличие от setArmies — по одному числу на тайл, без цветных маркеров.
+	 * Рисуется на том же `armyOverlayCanvas`: белый жирный текст с чёрной
+	 * обводкой (читается на любом градиенте), вертикальный центр —
+	 * `points[tileId].y + ARMY_OFFSET`, как у бейджей армий.
+	 */
+	setEconomies(byTileId: Map<number, { value: number }>): void {
+		const d = this.loadedMapData;
+		if (!d) return;
+		const { W, H, armyOverlayCtx: ctx, tileCenters, info } = d;
+		ctx.clearRect(0, 0, W, H);
+		if (byTileId.size === 0) return;
+
+		const FONT_PX = 14;
+		const ARMY_OFFSET = 6;
+
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.font = `bold ${FONT_PX}px sans-serif`;
+		ctx.lineWidth = Math.max(2, FONT_PX / 7);
+		ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+		ctx.fillStyle = '#ffffff';
+
+		const pts = info.points;
+		for (const [tileId, { value }] of byTileId) {
+			if (!Number.isInteger(tileId) || tileId < 0 || tileId >= info.colors.length) continue;
+			let cx: number | null = null, baseY: number | null = null;
+			if (pts && pts[tileId]) { cx = pts[tileId]!.x; baseY = pts[tileId]!.y; }
+			if (cx == null || baseY == null) {
+				const c = tileCenters[tileId];
+				if (!c || c.x < 0) continue;
+				cx = c.x; baseY = c.y;
+			}
+			const cy = baseY + ARMY_OFFSET;
+			const text = String(value);
+			ctx.strokeText(text, cx, cy);
+			ctx.fillText(text, cx, cy);
+		}
+	}
+	
 	static readonly COUNTRY_ALPHA = 160;
 
     destroy(): void {
