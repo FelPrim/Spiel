@@ -1,13 +1,11 @@
 import { state, setMode, addPoint, removePoint, DRAG_THRESHOLD } from './state.js';
-import { updateButtons } from './main.js';
+import { updateButtons, switchMode, onEconomyTileClick, onNeighboursTileClick } from './main.js';
 import {
-    getBaseCursor,
-    getImageCoords,
-    getInteractionRadiusImage,
-    hitTestPoint,
-    intToRgb
+    getBaseCursor, getImageCoords, getInteractionRadiusImage,
+    hitTestPoint, hitTestTile, intToRgb,
 } from './utils.js';
 import { redrawPoints, applyTransform, fitToScreen, zoomAt, renderEditor } from './rendering.js';
+
 
 // Вспомогательные функции для рисования кистью
 function paintStrokeTo(ctx, pts, radius, color) {
@@ -196,17 +194,16 @@ export function initInteractions(viewport, preview, overlay) {
             return;
         }
 
-        if (state.mode === 'add' || state.mode === 'delete') {
-            const coords = getImageCoords(e, viewport, state.scale, state.translateX, state.translateY);
-            state.pointerDownInfo = {
-                x: e.clientX,
-                y: e.clientY,
-                imageX: coords.imageX,
-                imageY: coords.imageY,
-                time: Date.now()
-            };
-            e.preventDefault();
-        }
+		if (state.mode === 'add' || state.mode === 'delete'
+			|| state.mode === 'economy' || state.mode === 'neighbours') {
+			const coords = getImageCoords(e, viewport, state.scale, state.translateX, state.translateY);
+			state.pointerDownInfo = {
+				x: e.clientX, y: e.clientY,
+				imageX: coords.imageX, imageY: coords.imageY,
+				time: Date.now()
+			};
+			e.preventDefault();
+		}
     });
 
     viewport.addEventListener('pointermove', (e) => {
@@ -232,6 +229,7 @@ export function initInteractions(viewport, preview, overlay) {
             const p = state.points[state.followPointIndex];
             p.x = coords.imageX;
             p.y = coords.imageY;
+            state.cellsCanvas = null;
             redrawPoints(overlay);
             e.preventDefault();
             return;
@@ -242,6 +240,7 @@ export function initInteractions(viewport, preview, overlay) {
             const p = state.points[state.draggedPointIndex];
             p.x = coords.imageX - state.dragOffsetX;
             p.y = coords.imageY - state.dragOffsetY;
+            state.cellsCanvas = null;
             redrawPoints(overlay);
             e.preventDefault();
             return;
@@ -328,17 +327,25 @@ export function initInteractions(viewport, preview, overlay) {
                     const imageX = state.pointerDownInfo.imageX;
                     const imageY = state.pointerDownInfo.imageY;
                     if (imageX >= 0 && imageX <= overlay.width && imageY >= 0 && imageY <= overlay.height) {
-                        if (state.mode === 'add') {
-                            addPoint(imageX, imageY);
-                            redrawPoints(overlay);
-                        } else if (state.mode === 'delete') {
-                            const idx = hitTestPoint(state.points, imageX, imageY, getInteractionRadiusImage(state.scale));
-                            if (idx !== -1) {
-                                removePoint(idx);
-                                state.hoveredPointIndex = -1;
-                                redrawPoints(overlay);
-                            }
-                        }
+                        
+						if (state.mode === 'add') {
+							addPoint(imageX, imageY);
+							redrawPoints(overlay);
+						} else if (state.mode === 'delete') {
+							const idx = hitTestPoint(state.points, imageX, imageY, getInteractionRadiusImage(state.scale));
+							if (idx !== -1) {
+								removePoint(idx);
+								state.hoveredPointIndex = -1;
+								redrawPoints(overlay);
+							}
+						} else if (state.mode === 'economy') {
+							const idx = hitTestTile(state.points, imageX, imageY, overlay.width, overlay.height);
+							if (idx >= 0) onEconomyTileClick(idx);
+						} else if (state.mode === 'neighbours') {
+							const idx = hitTestTile(state.points, imageX, imageY, overlay.width, overlay.height);
+							if (idx >= 0) onNeighboursTileClick(idx);
+						}
+						
                     }
                     state.lastActionClickTime = now;
                     state.lastActionClickX = e.clientX;
@@ -401,19 +408,27 @@ export function initInteractions(viewport, preview, overlay) {
     });
 
     window.addEventListener('keydown', (e) => {
-        const STEP = 50;
-        const ZOOM_STEP = 1.1;
+		const t = e.target;
+		if (t instanceof HTMLInputElement
+			|| t instanceof HTMLTextAreaElement
+			|| (t instanceof HTMLElement && t.isContentEditable)) {
+			if (e.code === 'Escape') { t.blur(); e.preventDefault(); }
+			return;
+		}
 
-        // Запрещаем клавиши переключения режимов в редакторе
+		const STEP = 50;
+		const ZOOM_STEP = 1.1;
+
         if (state.mode === 'editor') {
+            // A/R/C — это режимы точек, в редакторе они не нужны.
+            // E/N — выход в «Соседи»/«Экономику», разрешаем.
             if (['KeyA', 'KeyR', 'KeyC'].includes(e.code)) {
                 e.preventDefault();
                 return;
             }
-            // остальные клавиши работают
         }
 
-        switch (e.code) {
+		switch (e.code) {
             case 'Equal':
                 e.preventDefault();
                 zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, ZOOM_STEP, viewport, preview, overlay);
@@ -473,6 +488,14 @@ export function initInteractions(viewport, preview, overlay) {
                     updateCursor(viewport);
                 }
                 break;
+        case 'KeyE':
+            e.preventDefault();
+            switchMode('economy');
+            break;
+        case 'KeyN':
+            e.preventDefault();
+            switchMode('neighbours');
+            break;
         }
     });
 }

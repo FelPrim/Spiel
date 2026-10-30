@@ -40,10 +40,35 @@ export function getBaseCursor(mode) {
     switch (mode) {
         case 'pan': return 'grab';
         case 'add': return 'crosshair';
+        case 'economy':
+        case 'neighbours': return 'pointer';
         case 'delete':
         case 'move': return 'default';
         default: return 'default';
     }
+}
+
+/** Соседи из диаграммы Вороного (в тех же границах, что и export.js). */
+export function computeVoronoiNeighbours(points, width, height) {
+    const n = points.length;
+    if (n < 2) return points.map(() => []);
+    const delaunay = d3.Delaunay.from(points.map(p => [p.x, p.y]));
+    const voronoi = delaunay.voronoi([0, 0, width, height]);
+    const result = [];
+    for (let i = 0; i < n; i++) {
+        result.push(Array.from(voronoi.neighbors(i)));
+    }
+    return result;
+}
+
+/** Индекс тайла под точкой (imageX, imageY); -1 при пустом множестве. */
+export function hitTestTile(points, imageX, imageY) {
+    if (points.length === 0) return -1;
+    // find() у Delaunay возвращает индекс ближайшей точки, что для
+    // диаграммы Вороного эквивалентно «ячейка, содержащая (x, y)».
+    const delaunay = d3.Delaunay.from(points.map(p => [p.x, p.y]));
+    const idx = delaunay.find(imageX, imageY);
+    return (idx >= 0 && idx < points.length) ? idx : -1;
 }
 
 // Преобразование 24-битного числа в RGB-массив [r, g, b]

@@ -177,3 +177,156 @@ button:disabled,
     background: var(--border-top);
     color: var(--bg-bot);
 }
+
+/* ============ View controls (economy / neighbours) ============ */
+
+#export-controls {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    z-index: 20;
+}
+
+#neighbours-panel {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    width: 280px;
+    max-height: 85vh;
+    overflow-y: auto;
+    z-index: 15;
+
+    background: color-mix(in oklch, var(--bg) 35%, transparent);
+    backdrop-filter: blur(6px);
+    padding: 1rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-top);
+    box-shadow: 0 4px 16px #0003;
+    color: var(--text-cool);
+    font-family: inherit;
+    font-size: 0.85rem;
+}
+
+#neighbours-panel[hidden] { display: none; }
+
+#neighbours-panel .panel-title {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 8px;
+}
+
+#neighbours-hint {
+    opacity: 0.85;
+    margin-bottom: 8px;
+    line-height: 1.3;
+}
+#neighbours-hint[hidden] { display: none; }
+#neighbours-content[hidden] { display: none; }
+
+#neighbours-selected-label {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+#neighbours-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0 0 8px 0;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+#neighbours-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    margin-bottom: 3px;
+}
+
+#neighbours-list li button {
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    background: rgba(200, 80, 80, 0.4);
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+}
+#neighbours-list li button:hover { background: rgba(200, 80, 80, 0.65); }
+
+#neighbours-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#neighbours-actions button {
+    padding: 5px 8px;
+    font-size: 0.8rem;
+}
+#neighbours-actions button.active {
+    background: var(--border-top);
+    color: var(--bg-bot);
+}
+
+/* ============ Economy modal ============ */
+
+#economy-modal { position: fixed; inset: 0; z-index: 100; }
+#economy-modal[hidden] { display: none; }
+
+#economy-modal .modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+#economy-modal .modal-box {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: color-mix(in oklch, var(--bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    padding: 1.2rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-top);
+    box-shadow: 0 4px 24px #0006;
+    color: var(--text-cool);
+    min-width: 260px;
+    font-family: inherit;
+}
+
+#economy-modal .modal-title {
+    font-weight: 700;
+    margin-bottom: 10px;
+    font-size: 1rem;
+}
+
+#economy-modal .modal-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+#economy-modal .modal-field input {
+    width: 120px;
+    padding: 4px 6px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: 1px solid var(--border-top);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    text-align: right;
+}
+
+#economy-modal .modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}

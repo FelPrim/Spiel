@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { hexToRgba, getVisualRadiusImage, intToRgb } from './utils.js';
+import { hexToRgba, getVisualRadiusImage, intToRgb, computeVoronoiNeighbours } from './utils.js';
 
 // ============================================================
 //  Кэш слоя Вороного
@@ -77,12 +77,80 @@ export function redrawPoints(overlay) {
     });
 }
 
+
+function drawNeighbourLines(ctx) {
+    const sel = state.selectedTileIndex;
+    if (sel < 0 || sel >= state.points.length) return;
+    const overlayW = ctx.canvas.width;
+    const overlayH = ctx.canvas.height;
+    const neighbours = state.customNeighbours
+        || computeVoronoiNeighbours(state.points, overlayW, overlayH);
+    const nbrs = neighbours[sel] ?? [];
+    const from = state.points[sel];
+
+    const lw = Math.max(1.5, 2 / state.scale);
+    ctx.strokeStyle = 'rgba(0, 200, 200, 0.85)';
+    ctx.lineWidth = lw;
+    ctx.lineCap = 'round';
+
+    for (const n of nbrs) {
+        if (n < 0 || n >= state.points.length) continue;
+        const to = state.points[n];
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+    }
+}
+
+function drawEconomyNumbers(ctx) {
+    if (state.points.length === 0) return;
+    const fontSize = 14 / state.scale;
+    const offsetY = 12 / state.scale;
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = Math.max(2, fontSize / 7);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < state.points.length; i++) {
+        const v = state.economies ? state.economies[i] : 1000;
+        if (v == null) continue;
+        const p = state.points[i];
+        ctx.strokeText(String(v), p.x, p.y + offsetY);
+        ctx.fillText(String(v), p.x, p.y + offsetY);
+    }
+}
+
+
+
 function renderPointsNow(overlay) {
     const ctx = overlay.getContext('2d');
     ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-    // ---- 1. Слой Вороного: из кэша ----
-    if (state.points.length >= 2) {
+    // ---- 1. Базовый слой ----
+    // Если редактор уже использовался (editorColors задан и длина совпадает
+    // с количеством точек) — показываем «как в редакторе»: цветные ячейки
+    // + мазки кистью. Иначе — нейтральный Voronoi с настраиваемой заливкой.
+    const hasEditor = state.editorColors !== null
+        && state.editorColors.length === state.points.length
+        && state.points.length >= 2;
+
+    if (hasEditor) {
+        if (!state.cellsCanvas
+            || state.cellsCanvas.width  !== overlay.width
+            || state.cellsCanvas.height !== overlay.height) {
+            state.cellsCanvas = updateCellsCanvas(overlay, state.points, state.editorColors);
+        }
+        ctx.globalAlpha = state.fillAlpha;
+        if (state.cellsCanvas) {
+            ctx.drawImage(state.cellsCanvas, 0, 0);
+        }
+        if (state.brushCanvas) {
+            ctx.drawImage(state.brushCanvas, 0, 0);
+        }
+        ctx.globalAlpha = 1.0;
+    } else if (state.points.length >= 2) {
         const key = computeCacheKey();
         const needRebuild =
             !voronoiCache ||
@@ -94,12 +162,15 @@ function renderPointsNow(overlay) {
             voronoiCache = buildVoronoiCache(overlay.width, overlay.height);
             voronoiCacheKey = key;
         }
-        // Быстрый GPU-блит — вместо повторного пересчёта Вороного.
         ctx.drawImage(voronoiCache, 0, 0);
     }
 
-    // ---- 2. Слой маркеров точек ----
-    // Всегда перерисовывается, но это O(n) простых arc().
+    // ---- 2. Линии соседей ----
+    if (state.mode === 'neighbours') {
+        drawNeighbourLines(ctx);
+    }
+
+    // ---- 3. Слой маркеров точек ----
     if (!state.points.length) return;
     const visualRadius = getVisualRadiusImage(state.scale);
 
@@ -109,9 +180,12 @@ function renderPointsNow(overlay) {
         let radius = visualRadius;
         let fillStyle = 'rgba(255, 50, 50, 0.8)';
 
-        if (i === state.hoveredPointIndex &&
-            i !== state.draggedPointIndex &&
-            i !== state.followPointIndex) {
+        if (state.mode === 'neighbours' && i === state.selectedTileIndex) {
+            radius = visualRadius * 2.0;
+            fillStyle = 'rgba(0, 200, 200, 0.95)';
+        } else if (i === state.hoveredPointIndex &&
+                   i !== state.draggedPointIndex &&
+                   i !== state.followPointIndex) {
             radius = visualRadius * 1.8;
             fillStyle = 'rgba(255, 200, 0, 0.95)';
         } else if (i === state.draggedPointIndex || i === state.followPointIndex) {
@@ -122,6 +196,11 @@ function renderPointsNow(overlay) {
         ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
         ctx.fillStyle = fillStyle;
         ctx.fill();
+    }
+
+    // ---- 4. Экономики ----
+    if (state.mode === 'economy') {
+        drawEconomyNumbers(ctx);
     }
 }
 

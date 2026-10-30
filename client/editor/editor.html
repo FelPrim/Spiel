@@ -3,21 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <title>Редактор карт</title>
-	<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' font-family='Times New Roman, Times, serif' font-size='100' fill='black' text-anchor='middle' dominant-baseline='central'%3ES%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' font-family='Times New Roman, Times, serif' font-size='100' fill='black' text-anchor='middle' dominant-baseline='central'%3ES%3C/text%3E%3C/svg%3E">
     <script src="https://cdn.jsdelivr.net/npm/d3-delaunay@6"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-	<a href="../index.html" id="back-to-main" title="Вернуться на главную">На главную</a>
+    <a href="../index.html" id="back-to-main" title="Вернуться на главную">На главную</a>
 
     <div id="controls">
-
         <input type="file" id="file" accept="image/*">
-        <button id="mode-editor">Редактор</button>
         <button id="mode-add" title="Горячая клавиша: A">Добавление точек</button>
-		<button id="mode-delete" title="Горячая клавиша: R">Удаление точек</button>
-		<button id="mode-move" title="Горячая клавиша: C">Перемещение точек</button>
+        <button id="mode-delete" title="Горячая клавиша: R">Удаление точек</button>
+        <button id="mode-move" title="Горячая клавиша: C">Перемещение точек</button>
+        <button id="mode-editor">Редактор</button>
+        <button id="mode-neighbours" title="Горячая клавиша: N" disabled>Соседи</button>
+        <button id="mode-economy" title="Горячая клавиша: E" disabled>Экономика</button>
 
         <div class="style-group">
             <label>Заливка:</label>
@@ -49,6 +50,41 @@
             <span id="brush-size-value">10</span>
         </div>
         <button id="eyedropper">Пипетка</button>
+        <button id="mode-neighbours-editor" title="Горячая клавиша: N">Соседи</button>
+        <button id="mode-economy-editor" title="Горячая клавиша: E">Экономика</button>
+    </div>
+    </div>
+
+    <div id="neighbours-panel" hidden>
+        <div class="panel-title">Соседи</div>
+        <div id="neighbours-hint"></div>
+        <div id="neighbours-content" hidden>
+            <div id="neighbours-selected-label">—</div>
+            <ul id="neighbours-list"></ul>
+            <div id="neighbours-actions">
+                <button id="neighbours-toggle-edit" type="button">Изменить соседство</button>
+                <button id="neighbours-reset" type="button">Сбросить к Вороному</button>
+                <button id="neighbours-deselect" type="button">Снять выбор</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="economy-modal" hidden>
+        <div class="modal-overlay" id="economy-overlay"></div>
+        <div class="modal-box">
+            <div class="modal-title" id="economy-title">Экономика провинции</div>
+            <label class="modal-field">
+                <span>Значение:</span>
+                <input type="text" inputmode="numeric" autocomplete="off" id="economy-input" value="1000">
+            </label>
+            <div class="modal-buttons">
+                <button id="economy-ok" type="button">OK</button>
+                <button id="economy-cancel" type="button">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="export-controls">
         <a id="download" disabled>Скачать</a>
     </div>
 

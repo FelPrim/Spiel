@@ -13,6 +13,7 @@ export interface MapInfo {
     points?: MapPoint[];
     neighbours?: number[][];
     tilecount?: number;
+    economies?: number[];      // ← новое: tileId → economy
     [key: string]: unknown;
 }
 

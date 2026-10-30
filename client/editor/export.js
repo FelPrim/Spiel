@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { generateUniqueColors, intToRgb } from './utils.js';
+import { generateUniqueColors, intToRgb, computeVoronoiNeighbours } from './utils.js';
 
 export async function exportVoronoi(overlay, downloadElement) {
     if (state.points.length < 2) {
@@ -50,20 +50,31 @@ export async function exportVoronoi(overlay, downloadElement) {
 
     // Генерируем JSON
     const points = state.points.map(p => ({ x: p.x, y: p.y }));
-    const neighbours = [];
-    let neighbours_len = 0;
-    for (let i = 0; i < state.points.length; i++) {
-        const n = Array.from(voronoi.neighbors(i));
-        neighbours.push(n);
-        neighbours_len += n.length;
-    }
-    const graphData = {
-        tilecount: state.points.length,
-        neighbours_len: neighbours_len,
-        points: points,
-        colors: colors,
-        neighbours: neighbours
-    };
+    
+	// Neighbours: кастомный граф или из Вороного
+	let neighbours;
+	if (state.customNeighbours) {
+		neighbours = state.customNeighbours.map(arr => [...arr]);
+	} else {
+		neighbours = [];
+		for (let i = 0; i < state.points.length; i++) {
+			neighbours.push(Array.from(voronoi.neighbors(i)));
+		}
+	}
+	let neighbours_len = 0;
+	for (const n of neighbours) neighbours_len += n.length;
+
+	const graphData = {
+		tilecount: state.points.length,
+		neighbours_len,
+		points: state.points.map(p => ({ x: p.x, y: p.y })),
+		colors,
+		neighbours,
+	};
+	if (state.economies) {
+		graphData.economies = [...state.economies];
+	}
+	
     const jsonBlob = new Blob([JSON.stringify(graphData, null, 2)], { type: 'application/json' });
 
     // Имя архива

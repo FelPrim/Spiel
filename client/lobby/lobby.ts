@@ -322,16 +322,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	  const tilecount = info.tilecount as number;
 	  const neighbours = info.neighbours as number[][];
-
+	  const economies = info.economies as number[] | undefined;
+	  
 	  let state;
 	  try {
-		state = createInitialState({
-		  tilecount,
-		  neighbours,
-		  capitals,
-		  startingEconomy: INITIAL_ECONOMY,
-		  startingTreasury: INITIAL_TREASURY,
-		});
+	  	state = createInitialState({
+	  		tilecount,
+	  		neighbours,
+	  		capitals,
+	  		startingEconomy: INITIAL_ECONOMY,
+	  		startingTreasury: INITIAL_TREASURY,
+	  		tileEconomies: economies,
+	  	});
 	  } catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		mapStatus.textContent = 'Ошибка построения состояния: ' + msg;

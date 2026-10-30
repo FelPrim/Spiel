@@ -138,25 +138,46 @@ function supportCannonsTotal(g: ArmyGroup): number {
 
 export interface InitialStateParams {
   tilecount: number;
-  neighbours: number[][];       // info.neighbours, индексы в [0, tilecount)
-  capitals: number[];           // capitals[i] = tileId столицы страны i
+  neighbours: number[][];
+  capitals: number[];
   startingEconomy: number;
   startingTreasury: number;
-  /**
-   * Опционально: tileId → countryIdx для не-столичных стартовых владений.
-   * Если не задано — используется { capitals[i]: i } для каждого i.
-   */
   initialOwnership?: Map<number, number>;
+  /**
+   * Опционально: tileId → economy. Если задан — используется вместо
+   * startingEconomy для всех тайлов. Длина должна совпадать с tilecount,
+   * значения >= 0.
+   */
+  tileEconomies?: number[];
 }
 
 export function createInitialState(params: InitialStateParams): GameState {
-  const { tilecount, neighbours, capitals, startingEconomy, startingTreasury } = params;
+  const {
+    tilecount, neighbours, capitals, startingEconomy, startingTreasury,
+    tileEconomies,
+  } = params;
 
   if (neighbours.length !== tilecount) {
     throw new Error(
       `createInitialState: neighbours.length=${neighbours.length} != tilecount=${tilecount}`,
     );
   }
+
+  // --- валидация tileEconomies (если задан) ---
+  if (tileEconomies !== undefined) {
+    if (tileEconomies.length !== tilecount) {
+      throw new Error(
+        `createInitialState: tileEconomies.length=${tileEconomies.length} != tilecount=${tilecount}`,
+      );
+    }
+    for (let i = 0; i < tileEconomies.length; i++) {
+      const e = tileEconomies[i]!;
+      if (!Number.isFinite(e) || e < 0) {
+        throw new Error(`createInitialState: tileEconomies[${i}]=${e} должно быть конечным и >= 0`);
+      }
+    }
+  }
+
   const K = capitals.length;
   if (K === 0) throw new Error('createInitialState: нет ни одной страны');
 
@@ -210,7 +231,7 @@ export function createInitialState(params: InitialStateParams): GameState {
       owner: null,
       ownerprevmove: null,
       neighbours: [],
-      economy: startingEconomy,
+      economy: tileEconomies !== undefined ? tileEconomies[i]! : startingEconomy,
       retreat_province: new Array(K).fill(null),
       investments: 0,
       defenders: null as unknown as ArmyGroup,
